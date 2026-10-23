@@ -43,7 +43,8 @@
     "SoundService": {},
     "Workspace": {
       "$properties": {
-        "Gravity": 196.2
+        "Gravity": 196.2,
+        "StreamingEnabled": false
       }
     }
   }

@@ -97,7 +97,7 @@ local function buildMenu(handlers)
 	local menu = new("Frame", {
 		Name = "Menu",
 		AnchorPoint = Vector2.new(0, 0.5),
-		Position = UDim2.new(0, 12, 0.5, 0),
+		Position = UDim2.new(0, 12, 0.56, 0),
 		Size = UDim2.fromOffset(92, 470),
 		BackgroundTransparency = 1,
 		Parent = gui,
@@ -175,8 +175,8 @@ end
 local function buildGoal(onClaim)
 	local card = Theme.panel({
 		Name = "Goal",
-		AnchorPoint = Vector2.new(1, 0),
-		Position = UDim2.new(1, -12, 0, 96),
+		AnchorPoint = Vector2.new(1, 0.5),
+		Position = UDim2.new(1, -12, 0.56, 0),
 		Size = UDim2.fromOffset(270, 128),
 		BackgroundColor3 = C.bg,
 		BackgroundTransparency = 0.08,

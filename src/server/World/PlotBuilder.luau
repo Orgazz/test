@@ -33,7 +33,7 @@ PlotBuilder.Zones = {
 	{ z1 = 19.5, z2 = 60 },
 }
 
-PlotBuilder.SpawnOffset = CFrame.new(0, 3, -52)
+PlotBuilder.SpawnOffset = CFrame.new(0, 3, -52) * CFrame.Angles(0, math.pi, 0)
 
 function PlotBuilder.local_(plotCF, x, y, z)
 	return plotCF * CFrame.new(x, y, z)

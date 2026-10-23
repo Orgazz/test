@@ -234,6 +234,12 @@ local function buildPlaza(map)
 			Kit.box(plaza, "Curb", Vector3.new(1, 1, 8), CFrame.lookAt(pos, Vector3.new(0, 0.8, 0)) * CFrame.Angles(0, math.rad(90), 0), Color3.fromRGB(190, 185, 180), Enum.Material.Concrete)
 		end
 	end
+	local mosaic = { Color3.fromRGB(255, 150, 120), Color3.fromRGB(120, 190, 255), Color3.fromRGB(255, 215, 110), Color3.fromRGB(150, 220, 140) }
+	for i = 0, 15 do
+		local a = math.rad(i * 22.5)
+		local mid = Vector3.new(math.cos(a) * 34, 0.66, math.sin(a) * 34)
+		Kit.box(plaza, "Mosaic", Vector3.new(2.2, 0.05, 26), CFrame.lookAt(mid, Vector3.new(0, 0.66, 0)), mosaic[(i % 4) + 1], Enum.Material.Pavement, { CanCollide = false, CastShadow = false })
+	end
 	fountain(plaza, CFrame.new(0, 0.6, 0), 9)
 	-- Arboles y bancos en circulo
 	for i = 0, 7 do
@@ -242,7 +248,7 @@ local function buildPlaza(map)
 		Kit.cylinder(plaza, "Planter", 1.4, 7, CFrame.new(p + Vector3.new(0, 0.7, 0)), Color3.fromRGB(180, 140, 110), Enum.Material.Brick)
 		Kit.tree(plaza, CFrame.new(p + Vector3.new(0, 1.4, 0)), "round", Color3.fromRGB(110, 190, 90))
 		local bp = Vector3.new(math.cos(a) * 26, 0.6, math.sin(a) * 26)
-		Kit.bench(plaza, CFrame.lookAt(bp, Vector3.new(0, 0.6, 0)) * CFrame.Angles(0, math.rad(180), 0))
+		Kit.bench(plaza, CFrame.lookAt(bp, Vector3.new(0, 0.6, 0)))
 	end
 	for i = 0, 11 do
 		local a = math.rad(i * 30)
@@ -251,7 +257,7 @@ local function buildPlaza(map)
 		end
 	end
 	-- Escenario social (norte-oeste) y kioscos
-	stage(plaza, CFrame.lookAt(Vector3.new(-33, 0.6, -33), Vector3.new(0, 0.6, 0)) * CFrame.Angles(0, math.rad(180), 0))
+	stage(plaza, CFrame.lookAt(Vector3.new(-33, 0.6, -33), Vector3.new(0, 0.6, 0)))
 	kiosk(plaza, CFrame.lookAt(Vector3.new(34, 0.6, -30), Vector3.new(0, 0.6, 0)), "Helados", Color3.fromRGB(255, 120, 170), "🍦")
 	kiosk(plaza, CFrame.lookAt(Vector3.new(-36, 0.6, 30), Vector3.new(0, 0.6, 0)), "Palomitas", Color3.fromRGB(255, 80, 80), "🍿")
 	kiosk(plaza, CFrame.lookAt(Vector3.new(36, 0.6, 30), Vector3.new(0, 0.6, 0)), "Globos", Color3.fromRGB(90, 160, 255), "🎈")
@@ -484,6 +490,64 @@ local function buildNeighborhood(map, q, hoodIndex)
 end
 
 ------------------------------------------------------------------------------
+-- AFUERAS: arboledas, colinas y casitas para que el horizonte no quede vacio
+------------------------------------------------------------------------------
+
+local function house(parent, cf, wall, roof)
+	local m = Kit.model(parent, "House")
+	Kit.box(m, "Wall", Vector3.new(12, 8, 10), cf * CFrame.new(0, 4, 0), wall)
+	Kit.wedge(m, "Roof", Vector3.new(13, 4, 5.5), cf * CFrame.new(0, 10, -2.75), roof)
+	Kit.wedge(m, "Roof", Vector3.new(13, 4, 5.5), cf * CFrame.new(0, 10, 2.75) * CFrame.Angles(0, math.rad(180), 0), roof)
+	Kit.box(m, "Door", Vector3.new(2.6, 4.6, 0.3), cf * CFrame.new(0, 2.3, -5.1), Color3.fromRGB(120, 80, 55), Enum.Material.Wood)
+	Kit.windows(m, cf * CFrame.new(0, 5, -5.1), 10, 3, 1, 2, Color3.fromRGB(170, 220, 255), WHITE)
+	return m
+end
+
+local function buildOutskirts(map)
+	local out = Kit.model(map, "Outskirts")
+	local rng = Random.new(2024)
+	local styles = { "round", "pine", "round", "blossom" }
+	local RX, RZ = WorldBuilder.RingX, WorldBuilder.RingZ
+	-- Arboledas al norte y al sur (detras de las tiendas)
+	for _, sz in ipairs({ -1, 1 }) do
+		for i = 0, 40 do
+			local x = -470 + i * 23 + rng:NextNumber(-6, 6)
+			local z = sz * (RZ + 78 + rng:NextNumber(0, 80))
+			local inCoast = x > RX + 5
+			if not inCoast then
+				local style = styles[rng:NextInteger(1, #styles)]
+				Kit.tree(out, CFrame.new(x, 0, z) * CFrame.Angles(0, rng:NextNumber(0, 6.28), 0), style)
+			end
+		end
+		-- Casitas
+		for i = 0, 6 do
+			local x = -300 + i * 95
+			if x < RX - 20 then
+				local z = sz * (RZ + 58)
+				local wall = Color3.fromHSV(rng:NextNumber(0, 1), 0.25, 0.95)
+				local roof = Color3.fromHSV(rng:NextNumber(0, 1), 0.55, 0.7)
+				house(out, CFrame.lookAt(Vector3.new(x, 0, z), Vector3.new(x, 0, 0)), wall, roof)
+			end
+		end
+	end
+	-- Colinas en el horizonte oeste
+	for i = 0, 6 do
+		local z = -280 + i * 95
+		local d = 70 + rng:NextNumber(0, 40)
+		Kit.ball(out, "Hill", d, CFrame.new(-500 - rng:NextNumber(0, 30), -d * 0.28, z), Color3.fromRGB(95, 160, 85):Lerp(Color3.fromRGB(70, 130, 70), rng:NextNumber(0, 1)), Enum.Material.Grass)
+	end
+	for i = 0, 5 do
+		local x = -420 + i * 150
+		local d = 60 + rng:NextNumber(0, 40)
+		if x < RX then
+			Kit.ball(out, "Hill", d, CFrame.new(x, -d * 0.3, -360 - rng:NextNumber(0, 20)), Color3.fromRGB(100, 165, 90), Enum.Material.Grass)
+			Kit.ball(out, "Hill", d, CFrame.new(x + 60, -d * 0.3, 360 + rng:NextNumber(0, 20)), Color3.fromRGB(100, 165, 90), Enum.Material.Grass)
+		end
+	end
+	return out
+end
+
+------------------------------------------------------------------------------
 -- VEHICULOS DECORATIVOS (el cliente los mueve por el anillo)
 ------------------------------------------------------------------------------
 
@@ -541,7 +605,7 @@ function WorldBuilder.build()
 	if baseplate then
 		baseplate:Destroy()
 	end
-	Kit.box(map, "Ground", Vector3.new(1000, 4, 700), CFrame.new(0, -2, 0), Color3.fromRGB(120, 190, 100), Enum.Material.Grass)
+	Kit.box(map, "Ground", Vector3.new(1100, 4, 800), CFrame.new(0, -2, 0), Color3.fromRGB(120, 190, 100), Enum.Material.Grass)
 
 	buildRoads(map)
 	buildPlaza(map)
@@ -562,6 +626,7 @@ function WorldBuilder.build()
 	end
 
 	buildVehicles(map)
+	buildOutskirts(map)
 
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Name = "PlazaSpawn"

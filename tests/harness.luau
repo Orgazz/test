@@ -862,6 +862,22 @@ local TweenInfoMock = {
 	end,
 }
 
+-- Lune 0.8.9 invierte CFrame.lookAt (mira en sentido contrario). Version correcta:
+local CFrameFixed = setmetatable({
+	lookAt = function(pos, target, up)
+		up = up or roblox.Vector3.yAxis
+		local look = (target - pos).Unit
+		local right = look:Cross(up)
+		if right.Magnitude < 1e-6 then
+			right = roblox.Vector3.xAxis
+		end
+		right = right.Unit
+		local up2 = right:Cross(look).Unit
+		return roblox.CFrame.fromMatrix(pos, right, up2, -look)
+	end,
+}, { __index = roblox.CFrame })
+H.CFrame = CFrameFixed
+
 local InstanceMock = {
 	new = function(className, parent)
 		local p = wrap(roblox.Instance.new(className))
@@ -924,7 +940,7 @@ local function makeEnv(realm, scriptProxy)
 		Enum = roblox.Enum,
 		Vector3 = roblox.Vector3,
 		Vector2 = roblox.Vector2,
-		CFrame = roblox.CFrame,
+		CFrame = CFrameFixed,
 		Color3 = roblox.Color3,
 		BrickColor = roblox.BrickColor,
 		UDim = roblox.UDim,

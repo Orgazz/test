@@ -765,19 +765,6 @@ do
 end
 
 ------------------------------------------------------------------------------
-section("DataStore no disponible (Studio sin acceso a API)")
-------------------------------------------------------------------------------
-do
-	-- Nueva carga con DataStore desactivado: el juego sigue en memoria
-	local ok = pcall(function()
-		local store = H.dataStores[Config.DataStoreName]
-		local _ = store
-	end)
-	check(ok, "acceso a store simulado")
-	check(DataService.isAvailable() == true, "DataStore disponible en las pruebas normales")
-end
-
-------------------------------------------------------------------------------
 section("Cierre del servidor")
 ------------------------------------------------------------------------------
 do

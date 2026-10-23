@@ -601,6 +601,8 @@ builders.tower = function(m, cf, L, pal, S)
 		for side = -1, 1, 2 do
 			local win = Kit.box(m, "Window", Vector3.new(tw - 1, fh - 1.2, 0.2), body * CFrame.new(0, y + fh / 2, 1 + side * (td / 2 + 0.15)), Color3.fromRGB(150, 200, 255), Enum.Material.Glass, { Transparency = 0.1, CastShadow = false })
 			win:AddTag("TE_Window")
+			local sideWin = Kit.box(m, "Window", Vector3.new(0.2, fh - 1.2, td - 1), body * CFrame.new(side * (tw / 2 + 0.15), y + fh / 2, 1), Color3.fromRGB(150, 200, 255), Enum.Material.Glass, { Transparency = 0.1, CastShadow = false })
+			sideWin:AddTag("TE_Window")
 		end
 	end
 	local roofY = 6.6 + towerH
@@ -640,7 +642,19 @@ function Buildings.build(parent, id, cf, level, palette, footprint)
 	end
 	if palette.premium then
 		-- Tema dorado: bordes dorados y luces violetas
-		Kit.box(m, "GoldTrim", Vector3.new(footprint - 1.6, 0.3, footprint - 1.6), cf * CFrame.new(0, 0.75, 0), palette.trim, Enum.Material.Neon, { CanCollide = false })
+		local f = footprint - 2
+		for _, side in ipairs({ -1, 1 }) do
+			Kit.box(m, "GoldTrim", Vector3.new(f, 0.35, 0.5), cf * CFrame.new(0, 0.75, side * (f / 2 - 0.25)), palette.trim, Enum.Material.Neon, { CanCollide = false })
+			Kit.box(m, "GoldTrim", Vector3.new(0.5, 0.35, f), cf * CFrame.new(side * (f / 2 - 0.25), 0.75, 0), palette.trim, Enum.Material.Neon, { CanCollide = false })
+		end
+		for _, x in ipairs({ -1, 1 }) do
+			for _, z in ipairs({ -1, 1 }) do
+				local post = Kit.box(m, "GoldPost", Vector3.new(0.8, 3, 0.8), cf * CFrame.new(x * (f / 2 - 0.4), 1.9, z * (f / 2 - 0.4)), palette.trim, Enum.Material.Foil, { CanCollide = false })
+				local orb = Kit.ball(m, "GoldOrb", 1.1, cf * CFrame.new(x * (f / 2 - 0.4), 3.7, z * (f / 2 - 0.4)), palette.accent2, Enum.Material.Neon, { CanCollide = false })
+				local _ = post
+				Kit.light(orb, palette.accent2, 10, 1)
+			end
+		end
 		for _, d in ipairs(m:GetDescendants()) do
 			if d:IsA("BasePart") and (d.Name == "Wall" or d.Name == "Trim" or d.Name == "Roof" or d.Name == "SawRoof") then
 				if d.Name == "Wall" then

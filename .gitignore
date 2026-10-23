@@ -1,2 +1,4 @@
 /build/*.lock
 sourcemap.json
+/build/
+/.tools/
