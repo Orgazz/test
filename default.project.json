@@ -1,0 +1,50 @@
+{
+  "name": "TinyEmpireTycoon",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "TinyEmpireShared": {
+        "$path": "src/shared"
+      }
+    },
+    "ServerScriptService": {
+      "TinyEmpireServer": {
+        "$path": "src/server"
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "TinyEmpireClient": {
+          "$path": "src/client"
+        }
+      },
+      "$properties": {
+        "CameraMaxZoomDistance": 160
+      }
+    },
+    "Lighting": {
+      "$properties": {
+        "ClockTime": 14,
+        "Brightness": 2.5,
+        "GlobalShadows": true,
+        "OutdoorAmbient": [
+          0.55,
+          0.55,
+          0.6
+        ],
+        "Ambient": [
+          0.35,
+          0.35,
+          0.4
+        ],
+        "Technology": "ShadowMap"
+      }
+    },
+    "SoundService": {},
+    "Workspace": {
+      "$properties": {
+        "Gravity": 196.2
+      }
+    }
+  }
+}
