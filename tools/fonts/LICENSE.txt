@@ -1,0 +1,4 @@
+Fredoka (https://github.com/google/fonts/tree/main/ofl/fredoka)
+Copyright 2016 The Fredoka Project Authors.
+Licensed under the SIL Open Font License, Version 1.1 (https://openfontlicense.org).
+Solo se usa para generar las imagenes de tools/make_images.py.

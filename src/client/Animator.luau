@@ -58,6 +58,9 @@ local function refreshTags(e)
 	e.bob = inst:HasTag("TE_Bob")
 	e.slide = inst:HasTag("TE_Slide")
 	e.pulse = inst:HasTag("TE_Pulse") and inst:IsA("BasePart")
+	e.sway = inst:HasTag("TE_Sway")
+	e.swayAngle = math.rad(inst:GetAttribute("SwayAngle") or 15)
+	e.swaySpeed = inst:GetAttribute("SwaySpeed") or 0.5
 	e.spinSpeed = math.rad(inst:GetAttribute("SpinSpeed") or 45)
 	e.spinAxis = inst:GetAttribute("SpinAxis") or "Y"
 	e.bobHeight = inst:GetAttribute("BobHeight") or 1
@@ -78,7 +81,7 @@ local function step(t)
 		if e.dirtyTags then
 			refreshTags(e)
 		end
-		local moved = e.spin or e.bob or e.slide
+		local moved = e.spin or e.bob or e.slide or e.sway
 		if moved then
 			local cf = e.base
 			if e.slide then
@@ -93,6 +96,9 @@ local function step(t)
 			end
 			if e.bob then
 				cf = cf + Vector3.new(0, math.sin((t + e.seed) * e.bobSpeed * math.pi) * e.bobHeight, 0)
+			end
+			if e.sway then
+				cf = cf * CFrame.Angles(0, math.sin((t + e.seed) * e.swaySpeed * math.pi * 2) * e.swayAngle, 0)
 			end
 			if e.spin then
 				local a = (t + e.seed) * e.spinSpeed
@@ -178,6 +184,130 @@ local function registerCar(model)
 		lane = model:GetAttribute("Lane") or 1,
 		speed = model:GetAttribute("Speed") or 25,
 	})
+end
+
+------------------------------------------------------------------------------
+-- Peatones, semaforos y nubes
+------------------------------------------------------------------------------
+
+local walkers = {}
+local trafficLights = {}
+local clouds = {}
+
+local function registerWalker(model)
+	local pivot = model:GetPivot()
+	local parts = {}
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			local rel = pivot:ToObjectSpace(d.CFrame)
+			local limb = nil
+			if d.Name == "LegL" or (d.Name == "Shoe" and rel.Position.X < 0) then
+				limb = "legL"
+			elseif d.Name == "LegR" or (d.Name == "Shoe" and rel.Position.X > 0) then
+				limb = "legR"
+			elseif d.Name == "ArmL" then
+				limb = "armL"
+			elseif d.Name == "ArmR" then
+				limb = "armR"
+			end
+			table.insert(parts, { part = d, rel = rel, limb = limb })
+		end
+	end
+	table.insert(walkers, {
+		model = model,
+		parts = parts,
+		mode = model:GetAttribute("WalkMode") or "circle",
+		cx = model:GetAttribute("CenterX") or 0,
+		cz = model:GetAttribute("CenterZ") or 0,
+		radius = model:GetAttribute("Radius") or 20,
+		a = model:GetAttribute("A") or Vector3.zero,
+		b = model:GetAttribute("B") or Vector3.new(10, 0, 0),
+		speed = model:GetAttribute("Speed") or 4,
+		phase = model:GetAttribute("Phase") or 0,
+		baseY = model:GetAttribute("BaseY") or 0.5,
+		active = true,
+	})
+end
+
+local HIP = CFrame.new(0, 2, 0)
+local SHOULDER = CFrame.new(0, 3.9, 0)
+
+local function stepWalkers(t, camPos)
+	for _, w in ipairs(walkers) do
+		if w.model.Parent and w.active then
+			local pos, dir
+			if w.mode == "line" then
+				local delta = w.b - w.a
+				local len = delta.Magnitude
+				local s = (w.phase * 2 * len + t * math.abs(w.speed)) % (2 * len)
+				if s < len then
+					pos = w.a + delta * (s / len)
+					dir = delta.Unit
+				else
+					pos = w.b - delta * ((s - len) / len)
+					dir = -delta.Unit
+				end
+			else
+				local ang = w.phase * math.pi * 2 + t * w.speed / w.radius
+				pos = Vector3.new(w.cx + math.cos(ang) * w.radius, 0, w.cz + math.sin(ang) * w.radius)
+				dir = Vector3.new(-math.sin(ang), 0, math.cos(ang)) * (w.speed >= 0 and 1 or -1)
+			end
+			pos = Vector3.new(pos.X, w.baseY, pos.Z)
+			local pivot = CFrame.lookAt(pos, pos + dir)
+			local swing = math.sin(t * math.abs(w.speed) * 1.9 + w.phase * 10) * 0.55
+			for _, p in ipairs(w.parts) do
+				local cf
+				if p.limb == "legL" or p.limb == "legR" then
+					local a = p.limb == "legL" and swing or -swing
+					cf = pivot * HIP * CFrame.Angles(a, 0, 0) * HIP:Inverse() * p.rel
+				elseif p.limb == "armL" or p.limb == "armR" then
+					local a = p.limb == "armL" and -swing or swing
+					cf = pivot * SHOULDER * CFrame.Angles(a * 0.8, 0, 0) * SHOULDER:Inverse() * p.rel
+				else
+					cf = pivot * p.rel
+				end
+				p.part.CFrame = cf
+			end
+		end
+	end
+	local _ = camPos
+end
+
+local function updateWalkersActive(camPos)
+	for _, w in ipairs(walkers) do
+		local root = w.parts[1]
+		w.active = root ~= nil and (root.part.Position - camPos).Magnitude < 260
+	end
+end
+
+local function stepTrafficLights(t)
+	for _, tl in ipairs(trafficLights) do
+		if tl.model.Parent then
+			local cycle = (t / 12 + tl.phase) % 1
+			local state = cycle < 0.42 and "Green" or (cycle < 0.54 and "Yellow" or "Red")
+			if state ~= tl.state then
+				tl.state = state
+				for _, name in ipairs({ "Red", "Yellow", "Green" }) do
+					local lamp = tl.model:FindFirstChild(name)
+					if lamp then
+						local on = name == state
+						lamp.Material = on and Enum.Material.Neon or Enum.Material.SmoothPlastic
+						local c = lamp:GetAttribute("OnColor") or Color3.new(1, 1, 1)
+						lamp.Color = on and c or c:Lerp(Color3.new(0.1, 0.1, 0.1), 0.75)
+					end
+				end
+			end
+		end
+	end
+end
+
+local function stepClouds(t)
+	for _, c in ipairs(clouds) do
+		if c.model.Parent then
+			local x = ((c.base.Position.X + t * c.speed + 700) % 1400) - 700
+			c.model:PivotTo(CFrame.new(x, c.base.Position.Y, c.base.Position.Z))
+		end
+	end
 end
 
 ------------------------------------------------------------------------------
@@ -334,7 +464,7 @@ end
 ------------------------------------------------------------------------------
 
 function Animator.start(map)
-	for _, tag in ipairs({ "TE_Spin", "TE_Bob", "TE_Slide", "TE_Pulse" }) do
+	for _, tag in ipairs({ "TE_Spin", "TE_Bob", "TE_Slide", "TE_Pulse", "TE_Sway" }) do
 		for _, inst in ipairs(CollectionService:GetTagged(tag)) do
 			register(inst)
 		end
@@ -343,6 +473,15 @@ function Animator.start(map)
 	end
 	for _, car in ipairs(CollectionService:GetTagged("TE_Car")) do
 		registerCar(car)
+	end
+	for _, w in ipairs(CollectionService:GetTagged("TE_Walker")) do
+		registerWalker(w)
+	end
+	for _, tl in ipairs(CollectionService:GetTagged("TE_TrafficLight")) do
+		table.insert(trafficLights, { model = tl, phase = tl:GetAttribute("Phase") or 0, state = nil })
+	end
+	for _, c in ipairs(CollectionService:GetTagged("TE_Cloud")) do
+		table.insert(clouds, { model = c, base = c:GetPivot(), speed = c:GetAttribute("Speed") or 3 })
 	end
 
 	-- Construccion animada de edificios nuevos (en cualquier parcela)
@@ -369,12 +508,18 @@ function Animator.start(map)
 	RunService.RenderStepped:Connect(function(dt)
 		local t = os.clock() - start
 		acc += dt
+		local cam = workspace.CurrentCamera
+		local camPos = cam and cam.CFrame.Position or Vector3.zero
 		if acc > 0.5 then
 			acc = 0
 			updateActive()
+			updateWalkersActive(camPos)
+			stepTrafficLights(t)
 		end
 		step(t)
 		stepCars(t)
+		stepWalkers(t, camPos)
+		stepClouds(t)
 	end)
 	task.spawn(popupLoop, plotsFolder)
 end

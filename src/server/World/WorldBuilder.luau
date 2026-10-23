@@ -6,6 +6,7 @@ local Lighting = game:GetService("Lighting")
 
 local Kit = require(script.Parent.Kit)
 local Palettes = require(script.Parent.Palettes)
+local Details = require(script.Parent.Details)
 
 local WorldBuilder = {}
 
@@ -294,6 +295,12 @@ local function buildPlaza(map)
 		{ text = "Puerto Industrial", dir = Vector3.new(-1, 0, -0.3), color = Color3.fromRGB(230, 150, 40) },
 		{ text = "Costa Sol", dir = Vector3.new(1, 0, -0.3), color = Color3.fromRGB(40, 180, 200) },
 	})
+	-- Banderas y parada de autobus
+	Details.flag(plaza, CFrame.new(28, 0.6, 50), Color3.fromRGB(255, 110, 70), "TINY EMPIRE")
+	Details.flag(plaza, CFrame.new(-28, 0.6, 50), Color3.fromRGB(80, 160, 255), "⭐")
+	Details.flag(plaza, CFrame.new(28, 0.6, -50), Color3.fromRGB(90, 200, 120), "⭐")
+	Details.flag(plaza, CFrame.new(-28, 0.6, -50), Color3.fromRGB(255, 200, 60), "TINY EMPIRE")
+	Details.busStop(plaza, CFrame.new(72, 0.2, 30))
 	-- Zona de recogida de maletines
 	local crates = Instance.new("Folder")
 	crates.Name = "Crates"
@@ -366,6 +373,13 @@ local function shop(parent, cf, pal, name, icon, floors)
 	Kit.surfaceText(sign, icon .. " " .. name, Enum.NormalId.Front, WHITE, pal.accent:Lerp(Color3.new(0, 0, 0), 0.25))
 	local glow = Kit.box(m, "Glow", Vector3.new(w - 3, 0.2, 0.2), cf * CFrame.new(0, 4.1, -d / 2 - 0.4), Color3.fromRGB(255, 230, 170), Enum.Material.Neon)
 	Kit.light(glow, Color3.fromRGB(255, 220, 160), 14, 1.2)
+	Details.rooftop(m, cf * CFrame.new(0, h + 0.8, 0), w, d, Random.new(#name * 31 + floors))
+	-- Escalon de entrada y macetas
+	Kit.box(m, "Step", Vector3.new(4, 0.4, 1.4), cf * CFrame.new(0, 0.2, -d / 2 - 0.7), Color3.fromRGB(200, 200, 205), Enum.Material.Concrete)
+	for _, x in ipairs({ -w / 2 + 1.2, w / 2 - 1.2 }) do
+		Kit.box(m, "Pot", Vector3.new(1.4, 1, 1.4), cf * CFrame.new(x, 0.5, -d / 2 - 1), Color3.fromRGB(190, 120, 80), Enum.Material.Brick)
+		Kit.ball(m, "Plant", 1.8, cf * CFrame.new(x, 1.6, -d / 2 - 1), Color3.fromRGB(80, 170, 80), Enum.Material.Grass, { CanCollide = false })
+	end
 	return m
 end
 
@@ -627,6 +641,10 @@ function WorldBuilder.build()
 
 	buildVehicles(map)
 	buildOutskirts(map)
+	Details.crossings(map, WorldBuilder.RingX, WorldBuilder.RingZ)
+	Details.streetFurniture(map)
+	Details.pedestrians(map)
+	Details.clouds(map)
 
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Name = "PlazaSpawn"

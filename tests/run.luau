@@ -153,6 +153,9 @@ do
 	end
 	check(hoods == 4, "hay 4 barrios")
 	check(#map.Vehicles:GetChildren() == 12, "hay 12 vehiculos decorativos")
+	check(#map.Pedestrians:GetChildren() == 28, "hay 28 peatones")
+	check(#game:GetService("CollectionService"):GetTagged("TE_TrafficLight") == 8, "hay 8 semaforos")
+	check(#map.Clouds:GetChildren() == 16, "hay nubes en el cielo")
 	check(map:FindFirstChild("LeaderboardBoard", true) ~= nil, "existe el panel de ranking")
 	local lamps = #game:GetService("CollectionService"):GetTagged("TE_Lamp")
 	check(lamps > 50, "hay farolas con luz (" .. lamps .. ")")
@@ -566,8 +569,12 @@ do
 	clientConfig.Products.small.id = 1001
 	clientConfig.Products.medium.id = 1002
 	clientConfig.GamePasses.x2.id = 2001
+	client.runScript(game:GetService("ReplicatedFirst").TinyEmpireIntro.Intro)
 	client.runScript(clientRoot:FindFirstChild("Main"))
-	H.advance(3)
+	H.advance(0.5)
+	check(dave.PlayerGui:FindFirstChild("TinyEmpireIntro") ~= nil, "pantalla de carga visible al entrar")
+	H.advance(5)
+	check(dave.PlayerGui:FindFirstChild("TinyEmpireIntro") == nil, "la pantalla de carga desaparece al terminar")
 	local gui = dave.PlayerGui:FindFirstChild("TinyEmpireHUD")
 	check(gui ~= nil, "HUD creado")
 	if gui then
@@ -608,6 +615,13 @@ do
 			end
 		end
 		check(#productButtons == 6, "6 articulos en la tienda (3 pases + 3 paquetes)")
+		local storeIcons = 0
+		for _, d in ipairs(shopPage:GetDescendants()) do
+			if d.Name == "StoreIcon" then
+				storeIcons += 1
+			end
+		end
+		check(storeIcons == 3, "la tienda muestra las imagenes oficiales de los articulos con ID (" .. storeIcons .. ")")
 		local labels = {}
 		for _, b in ipairs(productButtons) do
 			table.insert(labels, b.Label.Text)

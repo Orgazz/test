@@ -2,6 +2,7 @@
 -- Ventanas: Imperio (negocios, mejoras, expansion), Retos y Tienda.
 
 local TweenService = game:GetService("TweenService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("TinyEmpireShared")
@@ -135,8 +136,41 @@ end
 local function iconBox(parent, icon, color, size)
 	local box = Theme.panel({ Size = UDim2.fromOffset(size, size), Position = UDim2.fromOffset(10, 10), BackgroundColor3 = color, Parent = parent, Radius = 14 })
 	Theme.gradient(Color3.new(1, 1, 1), Color3.fromRGB(170, 170, 180), 120).Parent = box
-	Theme.label({ Text = icon, Size = UDim2.fromScale(0.8, 0.8), Position = UDim2.fromScale(0.1, 0.1), MaxText = 48, Parent = box })
+	Theme.label({ Name = "Emoji", Text = icon, Size = UDim2.fromScale(0.8, 0.8), Position = UDim2.fromScale(0.1, 0.1), MaxText = 48, Parent = box })
 	return box
+end
+
+-- Usa la imagen oficial del pase/producto (subida en el Creator Dashboard) si existe
+local iconCache = {}
+local function useStoreIcon(box, assetId, infoType)
+	if not assetId or assetId <= 0 or box:GetAttribute("IconLoaded") then
+		return
+	end
+	box:SetAttribute("IconLoaded", true)
+	task.spawn(function()
+		local image = iconCache[assetId]
+		if not image then
+			local ok, info = pcall(function()
+				return MarketplaceService:GetProductInfo(assetId, infoType)
+			end)
+			if ok and info and info.IconImageAssetId and info.IconImageAssetId > 0 then
+				image = "rbxassetid://" .. info.IconImageAssetId
+				iconCache[assetId] = image
+			end
+		end
+		if image and box.Parent then
+			new("ImageLabel", {
+				Name = "StoreIcon",
+				Size = UDim2.fromScale(1, 1),
+				BackgroundTransparency = 1,
+				Image = image,
+				ScaleType = Enum.ScaleType.Fit,
+				Parent = box,
+			})
+			Theme.corner(14).Parent = box.StoreIcon
+			box.Emoji.Visible = false
+		end
+	end)
 end
 
 local function sectionHeader(parent, text, order, color)
@@ -465,7 +499,8 @@ local function buildShop()
 	for i, key in ipairs(Config.GamePassOrder) do
 		local p = Config.GamePasses[key]
 		local f = card(page, 100, 1 + i, C.gold)
-		iconBox(f, p.icon, C.gold, 76)
+		local passIcon = iconBox(f, p.icon, C.gold, 76)
+		useStoreIcon(passIcon, p.id, Enum.InfoType.GamePass)
 		Theme.label({ Text = p.name, Size = UDim2.new(1, -300, 0, 28), Position = UDim2.fromOffset(98, 10), TextXAlignment = Enum.TextXAlignment.Left, MaxText = 23, Parent = f })
 		Theme.label({ Text = p.desc, Size = UDim2.new(1, -300, 0, 48), Position = UDim2.fromOffset(98, 42), TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, TextColor3 = C.muted, Font = Theme.Bold, MaxText = 15, Parent = f })
 		local btn = Theme.button({
@@ -493,7 +528,8 @@ local function buildShop()
 	for i, key in ipairs(Config.ProductOrder) do
 		local p = Config.Products[key]
 		local f = card(page, 92, 5 + i, C.green)
-		iconBox(f, p.icon, C.green, 70)
+		local productIcon = iconBox(f, p.icon, C.green, 70)
+		useStoreIcon(productIcon, p.id, Enum.InfoType.Product)
 		Theme.label({ Text = p.name, Size = UDim2.new(1, -300, 0, 28), Position = UDim2.fromOffset(92, 10), TextXAlignment = Enum.TextXAlignment.Left, MaxText = 23, Parent = f })
 		local amount = Theme.label({ Text = "", Size = UDim2.new(1, -300, 0, 40), Position = UDim2.fromOffset(92, 42), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = C.green, MaxText = 26, Parent = f })
 		local btn = Theme.button({

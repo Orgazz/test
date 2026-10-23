@@ -720,6 +720,10 @@ function H.setup(opts)
 			task.wait(0.05)
 			return H.ownedPasses[userId] ~= nil and H.ownedPasses[userId][passId] == true
 		end,
+		GetProductInfo = function(_, id, _infoType)
+			task.wait(0.05)
+			return { Name = "Item " .. tostring(id), IconImageAssetId = 900000 + id }
+		end,
 		PromptGamePassPurchase = function(_, player, id)
 			table.insert(H.prompts, { kind = "pass", player = player, id = id })
 		end,
@@ -1005,6 +1009,9 @@ function H.clientGame(player)
 	local clientGameReal = roblox.Instance.new("Folder")
 	local proxy = wrap(clientGameReal, {
 		JobId = "client",
+		IsLoaded = function()
+			return true
+		end,
 		GetService = function(_, name)
 			if services[name] then
 				return services[name]

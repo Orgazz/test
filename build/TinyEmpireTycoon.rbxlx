@@ -18,15 +18,268 @@
       <token name="Technology">3</token>
     </Properties>
   </Item>
-  <Item class="ReplicatedStorage" referent="1">
+  <Item class="ReplicatedFirst" referent="1">
     <Properties>
-      <string name="Name">ReplicatedStorage</string>
+      <string name="Name">ReplicatedFirst</string>
     </Properties>
     <Item class="Folder" referent="2">
       <Properties>
+        <string name="Name">TinyEmpireIntro</string>
+      </Properties>
+      <Item class="LocalScript" referent="3">
+        <Properties>
+          <string name="Name">Intro</string>
+          <string name="Source"><![CDATA[--!nonstrict
+-- Pantalla de carga animada: skyline que crece, titulo con rebote y consejos.
+
+local Players = game:GetService("Players")
+local ReplicatedFirst = game:GetService("ReplicatedFirst")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+
+pcall(function()
+	ReplicatedFirst:RemoveDefaultLoadingScreen()
+end)
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "TinyEmpireIntro"
+gui.IgnoreGuiInset = true
+gui.DisplayOrder = 100
+gui.ResetOnSpawn = false
+gui.Parent = playerGui
+
+local bg = Instance.new("Frame")
+bg.Size = UDim2.fromScale(1, 1)
+bg.BackgroundColor3 = Color3.new(1, 1, 1)
+bg.BorderSizePixel = 0
+bg.Parent = gui
+local grad = Instance.new("UIGradient")
+grad.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 170, 120)),
+	ColorSequenceKeypoint.new(0.55, Color3.fromRGB(120, 170, 255)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(60, 80, 170)),
+})
+grad.Rotation = 90
+grad.Parent = bg
+
+-- Sol
+local sun = Instance.new("Frame")
+sun.AnchorPoint = Vector2.new(0.5, 0.5)
+sun.Position = UDim2.fromScale(0.78, 0.3)
+sun.Size = UDim2.fromScale(0.14, 0.14)
+sun.BackgroundColor3 = Color3.fromRGB(255, 230, 140)
+sun.BorderSizePixel = 0
+sun.Parent = bg
+local sunRatio = Instance.new("UIAspectRatioConstraint")
+sunRatio.Parent = sun
+local sunCorner = Instance.new("UICorner")
+sunCorner.CornerRadius = UDim.new(1, 0)
+sunCorner.Parent = sun
+
+-- Skyline: edificios que crecen desde abajo
+local colors = {
+	Color3.fromRGB(255, 120, 150),
+	Color3.fromRGB(255, 200, 90),
+	Color3.fromRGB(110, 210, 160),
+	Color3.fromRGB(150, 130, 255),
+	Color3.fromRGB(90, 190, 240),
+	Color3.fromRGB(255, 150, 90),
+}
+local skyline = Instance.new("Frame")
+skyline.AnchorPoint = Vector2.new(0, 1)
+skyline.Position = UDim2.fromScale(0, 1)
+skyline.Size = UDim2.fromScale(1, 0.42)
+skyline.BackgroundTransparency = 1
+skyline.Parent = bg
+local rng = Random.new(5)
+local x = 0
+local i = 0
+while x < 1 do
+	i += 1
+	local w = rng:NextNumber(0.045, 0.09)
+	local h = rng:NextNumber(0.35, 1)
+	local b = Instance.new("Frame")
+	b.AnchorPoint = Vector2.new(0, 1)
+	b.Position = UDim2.fromScale(x, 1)
+	b.Size = UDim2.fromScale(w, 0)
+	b.BackgroundColor3 = colors[(i % #colors) + 1]
+	b.BorderSizePixel = 0
+	b.Parent = skyline
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, 6)
+	c.Parent = b
+	-- Ventanas
+	for r = 1, 4 do
+		for col = 1, 2 do
+			local win = Instance.new("Frame")
+			win.Size = UDim2.fromScale(0.22, 0.06)
+			win.Position = UDim2.fromScale(0.18 + (col - 1) * 0.42, 0.08 + (r - 1) * 0.14)
+			win.BackgroundColor3 = Color3.fromRGB(255, 245, 200)
+			win.BackgroundTransparency = 0.15
+			win.BorderSizePixel = 0
+			win.Parent = b
+		end
+	end
+	task.delay(i * 0.05, function()
+		TweenService:Create(b, TweenInfo.new(0.7, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromScale(w, h) }):Play()
+	end)
+	x += w + 0.008
+end
+
+-- Titulo letra a letra
+local titleHolder = Instance.new("Frame")
+titleHolder.AnchorPoint = Vector2.new(0.5, 0.5)
+titleHolder.Position = UDim2.fromScale(0.5, 0.3)
+titleHolder.Size = UDim2.fromScale(0.8, 0.16)
+titleHolder.BackgroundTransparency = 1
+titleHolder.Parent = bg
+local layout = Instance.new("UIListLayout")
+layout.FillDirection = Enum.FillDirection.Horizontal
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+layout.VerticalAlignment = Enum.VerticalAlignment.Center
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = titleHolder
+local text = "TINY EMPIRE"
+local letterColors = { Color3.fromRGB(255, 220, 90), Color3.fromRGB(255, 255, 255) }
+for k = 1, #text do
+	local ch = text:sub(k, k)
+	local l = Instance.new("TextLabel")
+	l.LayoutOrder = k
+	l.Size = UDim2.fromScale(ch == " " and 0.04 or 0.075, 1)
+	l.BackgroundTransparency = 1
+	l.Font = Enum.Font.FredokaOne
+	l.TextScaled = true
+	l.Text = ch
+	l.TextColor3 = letterColors[(k % 2) + 1]
+	l.TextTransparency = 1
+	l.Parent = titleHolder
+	local st = Instance.new("UIStroke")
+	st.Thickness = 4
+	st.Color = Color3.fromRGB(60, 40, 90)
+	st.Transparency = 1
+	st.Parent = l
+	local sc = Instance.new("UIScale")
+	sc.Scale = 0.2
+	sc.Parent = l
+	task.delay(0.3 + k * 0.06, function()
+		TweenService:Create(l, TweenInfo.new(0.25), { TextTransparency = 0 }):Play()
+		TweenService:Create(st, TweenInfo.new(0.25), { Transparency = 0 }):Play()
+		TweenService:Create(sc, TweenInfo.new(0.5, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	end)
+end
+local sub = Instance.new("TextLabel")
+sub.AnchorPoint = Vector2.new(0.5, 0.5)
+sub.Position = UDim2.fromScale(0.5, 0.42)
+sub.Size = UDim2.fromScale(0.5, 0.07)
+sub.BackgroundTransparency = 1
+sub.Font = Enum.Font.FredokaOne
+sub.TextScaled = true
+sub.Text = "✦ T Y C O O N ✦"
+sub.TextColor3 = Color3.fromRGB(255, 255, 255)
+sub.Parent = bg
+local subStroke = Instance.new("UIStroke")
+subStroke.Thickness = 3
+subStroke.Color = Color3.fromRGB(60, 40, 90)
+subStroke.Parent = sub
+
+-- Barra de carga y consejos
+local barBg = Instance.new("Frame")
+barBg.AnchorPoint = Vector2.new(0.5, 0.5)
+barBg.Position = UDim2.fromScale(0.5, 0.52)
+barBg.Size = UDim2.fromScale(0.36, 0.028)
+barBg.BackgroundColor3 = Color3.fromRGB(40, 35, 70)
+barBg.BorderSizePixel = 0
+barBg.Parent = bg
+local barCorner = Instance.new("UICorner")
+barCorner.CornerRadius = UDim.new(1, 0)
+barCorner.Parent = barBg
+local fill = Instance.new("Frame")
+fill.Size = UDim2.fromScale(0.02, 1)
+fill.BackgroundColor3 = Color3.fromRGB(110, 235, 130)
+fill.BorderSizePixel = 0
+fill.Parent = barBg
+local fillCorner = Instance.new("UICorner")
+fillCorner.CornerRadius = UDim.new(1, 0)
+fillCorner.Parent = fill
+
+local tip = Instance.new("TextLabel")
+tip.AnchorPoint = Vector2.new(0.5, 0.5)
+tip.Position = UDim2.fromScale(0.5, 0.58)
+tip.Size = UDim2.fromScale(0.6, 0.04)
+tip.BackgroundTransparency = 1
+tip.Font = Enum.Font.GothamBold
+tip.TextScaled = true
+tip.TextColor3 = Color3.fromRGB(255, 255, 255)
+tip.Parent = bg
+local tips = {
+	"Construyendo tu ciudad...",
+	"💡 Pisa los botones verdes para abrir negocios",
+	"💡 Los botones azules suben de nivel tus negocios",
+	"💡 Recoge maletines 💼 en la plaza central",
+	"💡 Completa los retos diarios para ganar premios",
+}
+
+local finished = false
+task.spawn(function()
+	local k = 1
+	while not finished do
+		tip.Text = tips[k]
+		k = (k % #tips) + 1
+		task.wait(1.6)
+	end
+end)
+
+local start = os.clock()
+local function progress(alpha)
+	TweenService:Create(fill, TweenInfo.new(0.4, Enum.EasingStyle.Quad), { Size = UDim2.fromScale(math.max(0.02, alpha), 1) }):Play()
+end
+progress(0.15)
+if not game:IsLoaded() then
+	game.Loaded:Wait()
+end
+progress(0.45)
+ReplicatedStorage:WaitForChild("TinyEmpireRemotes", 60)
+progress(0.75)
+workspace:WaitForChild("TinyEmpireMap", 60)
+playerGui:WaitForChild("TinyEmpireHUD", 30)
+progress(1)
+local elapsed = os.clock() - start
+if elapsed < 2.8 then
+	task.wait(2.8 - elapsed)
+end
+finished = true
+
+-- Salida: todo se desvanece
+for _, d in ipairs(gui:GetDescendants()) do
+	if d:IsA("GuiObject") then
+		TweenService:Create(d, TweenInfo.new(0.6), { BackgroundTransparency = 1 }):Play()
+		if d:IsA("TextLabel") then
+			TweenService:Create(d, TweenInfo.new(0.6), { TextTransparency = 1 }):Play()
+		end
+	elseif d:IsA("UIStroke") then
+		TweenService:Create(d, TweenInfo.new(0.6), { Transparency = 1 }):Play()
+	end
+end
+TweenService:Create(bg, TweenInfo.new(0.6), { BackgroundTransparency = 1 }):Play()
+task.wait(0.7)
+gui:Destroy()
+]]></string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ReplicatedStorage" referent="4">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="Folder" referent="5">
+      <Properties>
         <string name="Name">TinyEmpireShared</string>
       </Properties>
-      <Item class="ModuleScript" referent="3">
+      <Item class="ModuleScript" referent="6">
         <Properties>
           <string name="Name">Config</string>
           <string name="Source"><![CDATA[--!nonstrict
@@ -230,7 +483,7 @@ return Config
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="4">
+      <Item class="ModuleScript" referent="7">
         <Properties>
           <string name="Name">Economy</string>
           <string name="Source"><![CDATA[--!nonstrict
@@ -525,7 +778,7 @@ return Economy
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="5">
+      <Item class="ModuleScript" referent="8">
         <Properties>
           <string name="Name">Format</string>
           <string name="Source"><![CDATA[--!nonstrict
@@ -597,15 +850,15 @@ return Format
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="6">
+  <Item class="ServerScriptService" referent="9">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Folder" referent="7">
+    <Item class="Folder" referent="10">
       <Properties>
         <string name="Name">TinyEmpireServer</string>
       </Properties>
-      <Item class="Script" referent="8">
+      <Item class="Script" referent="11">
         <Properties>
           <string name="Name">Main</string>
           <token name="RunContext">0</token>
@@ -653,11 +906,11 @@ print(string.format("[TinyEmpire] Servidor listo: %d parcelas creadas.", #plotDe
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Folder" referent="9">
+      <Item class="Folder" referent="12">
         <Properties>
           <string name="Name">Services</string>
         </Properties>
-        <Item class="ModuleScript" referent="10">
+        <Item class="ModuleScript" referent="13">
           <Properties>
             <string name="Name">ChallengeService</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -771,7 +1024,7 @@ return ChallengeService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="11">
+        <Item class="ModuleScript" referent="14">
           <Properties>
             <string name="Name">CrateService</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -862,7 +1115,7 @@ return CrateService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="12">
+        <Item class="ModuleScript" referent="15">
           <Properties>
             <string name="Name">DataService</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -1105,7 +1358,7 @@ return DataService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="13">
+        <Item class="ModuleScript" referent="16">
           <Properties>
             <string name="Name">DayNightService</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -1209,7 +1462,7 @@ return DayNightService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="14">
+        <Item class="ModuleScript" referent="17">
           <Properties>
             <string name="Name">GameService</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -1926,7 +2179,7 @@ return GameService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="15">
+        <Item class="ModuleScript" referent="18">
           <Properties>
             <string name="Name">LeaderboardService</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -2016,7 +2269,7 @@ return LeaderboardService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="16">
+        <Item class="ModuleScript" referent="19">
           <Properties>
             <string name="Name">MonetizationService</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -2214,7 +2467,7 @@ return MonetizationService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="17">
+        <Item class="ModuleScript" referent="20">
           <Properties>
             <string name="Name">PlotService</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -2453,11 +2706,11 @@ return PlotService
           </Properties>
         </Item>
       </Item>
-      <Item class="Folder" referent="18">
+      <Item class="Folder" referent="21">
         <Properties>
           <string name="Name">World</string>
         </Properties>
-        <Item class="ModuleScript" referent="19">
+        <Item class="ModuleScript" referent="22">
           <Properties>
             <string name="Name">Buildings</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -2471,6 +2724,7 @@ return PlotService
 --   TE_Pulse (PulseSpeed) neon que parpadea suavemente
 
 local Kit = require(script.Parent.Kit)
+local Details = require(script.Parent.Details)
 
 local Buildings = {}
 
@@ -2742,7 +2996,7 @@ builders.bakery = function(m, cf, L, pal, S)
 	local wall = Color3.fromRGB(245, 225, 190)
 	local floors = L >= 3 and 2 or 1
 	local body = cf * CFrame.new(0, 0, 2)
-	local top = block(m, body, 13, 9, 7 * floors, 0.6, wall, { rows = floors, cols = 3, trim = Color3.fromRGB(140, 90, 60), sill = Color3.fromRGB(140, 90, 60) })
+	local top = block(m, body, 13, 9, 7 * floors, 0.6, wall, { rows = floors, cols = 3, trim = Color3.fromRGB(140, 90, 60), sill = Color3.fromRGB(140, 90, 60), material = Enum.Material.Brick })
 	gable(m, body, 13, 9, 4, top, Color3.fromRGB(170, 70, 50))
 	door(m, body, 0, -4.5, Color3.fromRGB(150, 90, 50))
 	frontSign(m, body, "🥐 PANADERÍA", 7.6 * floors - 0.5, -4.5, 9, Color3.fromRGB(140, 90, 60), Color3.fromRGB(255, 235, 200))
@@ -2783,7 +3037,7 @@ builders.cafe = function(m, cf, L, pal, S)
 	local brown = Color3.fromRGB(120, 80, 60)
 	local floors = (L >= 5 and 3) or (L >= 3 and 2) or 1
 	local body = cf * CFrame.new(0, 0, 3)
-	local top = block(m, body, 14, 10, 6.5 * floors, 0.6, Color3.fromRGB(235, 220, 200), { rows = floors, cols = 3, trim = brown })
+	local top = block(m, body, 14, 10, 6.5 * floors, 0.6, Color3.fromRGB(235, 220, 200), { rows = floors, cols = 3, trim = brown, material = Enum.Material.Concrete })
 	-- Escaparate grande
 	Kit.box(m, "Storefront", Vector3.new(10, 4.5, 0.3), body * CFrame.new(0, 3, -5.15), GLASS, Enum.Material.Glass, { Transparency = 0.25 })
 	door(m, body, 5.5, -5, brown, 2.2, 4.5)
@@ -3102,6 +3356,12 @@ function Buildings.build(parent, id, cf, level, palette, footprint)
 	if builder then
 		builder(m, cf, level, palette, footprint)
 	end
+	-- Clientes en la puerta: mas negocio, mas gente
+	local seed = level * 97
+	for i = 1, #id do
+		seed += string.byte(id, i) * i
+	end
+	Details.customers(m, cf, level, footprint, seed)
 	if palette.premium then
 		-- Tema dorado: bordes dorados y luces violetas
 		local f = footprint - 2
@@ -3142,7 +3402,403 @@ return Buildings
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="20">
+        <Item class="ModuleScript" referent="23">
+          <Properties>
+            <string name="Name">Details</string>
+            <string name="Source"><![CDATA[--!nonstrict
+-- Detalles urbanos: peatones, clientes, pasos de cebra, semaforos, mobiliario,
+-- parada de autobus, banderas y nubes. Todo lo que se mueve lo anima el cliente.
+--   TE_Walker        peaton (WalkMode "circle" | "line")
+--   TE_TrafficLight  semaforo (luces Red / Yellow / Green)
+--   TE_Sway          balanceo suave (banderas)
+--   TE_Cloud         nube a la deriva
+
+local Kit = require(script.Parent.Kit)
+
+local Details = {}
+
+local WHITE = Color3.new(1, 1, 1)
+local DARK = Color3.fromRGB(45, 48, 58)
+
+local SKIN = {
+	Color3.fromRGB(255, 220, 180),
+	Color3.fromRGB(235, 185, 140),
+	Color3.fromRGB(190, 135, 95),
+	Color3.fromRGB(140, 95, 65),
+	Color3.fromRGB(95, 65, 45),
+}
+local CLOTHES = {
+	Color3.fromRGB(240, 80, 80),
+	Color3.fromRGB(80, 150, 240),
+	Color3.fromRGB(250, 200, 60),
+	Color3.fromRGB(90, 200, 120),
+	Color3.fromRGB(180, 110, 240),
+	Color3.fromRGB(255, 140, 60),
+	Color3.fromRGB(240, 240, 245),
+	Color3.fromRGB(60, 200, 210),
+	Color3.fromRGB(255, 120, 180),
+}
+local PANTS = {
+	Color3.fromRGB(50, 70, 130),
+	Color3.fromRGB(40, 40, 50),
+	Color3.fromRGB(120, 90, 60),
+	Color3.fromRGB(90, 95, 105),
+	Color3.fromRGB(30, 60, 90),
+}
+local HAIR = {
+	Color3.fromRGB(40, 30, 25),
+	Color3.fromRGB(110, 70, 40),
+	Color3.fromRGB(230, 190, 100),
+	Color3.fromRGB(180, 60, 40),
+	Color3.fromRGB(20, 20, 25),
+}
+
+-- Persona estilo bloque (mirando a -Z, pivote en los pies)
+function Details.person(parent, cf, rng, opts)
+	opts = opts or {}
+	local m = Kit.model(parent, "Person")
+	local skin = SKIN[rng:NextInteger(1, #SKIN)]
+	local shirt = opts.shirt or CLOTHES[rng:NextInteger(1, #CLOTHES)]
+	local pants = PANTS[rng:NextInteger(1, #PANTS)]
+	local hair = HAIR[rng:NextInteger(1, #HAIR)]
+	local s = opts.scale or 1
+	local function p(name, size, offset, color, material)
+		local part = Kit.box(m, name, size * s, cf * CFrame.new(offset * s), color, material or Enum.Material.SmoothPlastic, { CanCollide = false, CastShadow = true })
+		return part
+	end
+	p("LegL", Vector3.new(0.9, 2, 0.9), Vector3.new(-0.5, 1, 0), pants)
+	p("LegR", Vector3.new(0.9, 2, 0.9), Vector3.new(0.5, 1, 0), pants)
+	p("Shoe", Vector3.new(0.95, 0.35, 1.1), Vector3.new(-0.5, 0.17, -0.1), DARK)
+	p("Shoe", Vector3.new(0.95, 0.35, 1.1), Vector3.new(0.5, 0.17, -0.1), DARK)
+	p("Torso", Vector3.new(2, 2, 1), Vector3.new(0, 3, 0), shirt)
+	p("ArmL", Vector3.new(0.8, 1.9, 0.8), Vector3.new(-1.4, 3.05, 0), shirt:Lerp(skin, 0.15))
+	p("ArmR", Vector3.new(0.8, 1.9, 0.8), Vector3.new(1.4, 3.05, 0), shirt:Lerp(skin, 0.15))
+	p("Head", Vector3.new(1.25, 1.25, 1.25), Vector3.new(0, 4.65, 0), skin)
+	p("Hair", Vector3.new(1.35, 0.45, 1.35), Vector3.new(0, 5.35, 0.05), hair)
+	p("EyeL", Vector3.new(0.18, 0.22, 0.05), Vector3.new(-0.28, 4.75, -0.63), DARK)
+	p("EyeR", Vector3.new(0.18, 0.22, 0.05), Vector3.new(0.28, 4.75, -0.63), DARK)
+	if rng:NextNumber() < 0.35 then
+		-- Gorra o sombrero
+		p("Cap", Vector3.new(1.4, 0.35, 1.4), Vector3.new(0, 5.45, 0), CLOTHES[rng:NextInteger(1, #CLOTHES)])
+		p("Visor", Vector3.new(1.2, 0.15, 0.7), Vector3.new(0, 5.3, -0.9), CLOTHES[rng:NextInteger(1, #CLOTHES)])
+	elseif rng:NextNumber() < 0.3 then
+		p("Bag", Vector3.new(0.4, 1.2, 0.9), Vector3.new(1.85, 2.4, 0), Color3.fromRGB(150, 100, 60))
+	end
+	m.WorldPivot = cf
+	return m
+end
+
+------------------------------------------------------------------------------
+-- Peatones
+------------------------------------------------------------------------------
+
+local function walker(parent, rng, attrs)
+	-- Posicion inicial = punto del recorrido en t = 0 (igual que el cliente)
+	local pos, dir
+	if attrs.WalkMode == "line" then
+		local delta = attrs.B - attrs.A
+		local len = delta.Magnitude
+		local s = (attrs.Phase * 2 * len) % (2 * len)
+		if s < len then
+			pos, dir = attrs.A + delta * (s / len), delta.Unit
+		else
+			pos, dir = attrs.B - delta * ((s - len) / len), -delta.Unit
+		end
+	else
+		local ang = attrs.Phase * math.pi * 2
+		pos = Vector3.new(attrs.CenterX + math.cos(ang) * attrs.Radius, 0, attrs.CenterZ + math.sin(ang) * attrs.Radius)
+		dir = Vector3.new(-math.sin(ang), 0, math.cos(ang)) * (attrs.Speed >= 0 and 1 or -1)
+	end
+	pos = Vector3.new(pos.X, attrs.BaseY, pos.Z)
+	local m = Details.person(parent, CFrame.lookAt(pos, pos + dir), rng)
+	m.Name = "Pedestrian"
+	for k, v in pairs(attrs) do
+		m:SetAttribute(k, v)
+	end
+	m:AddTag("TE_Walker")
+	return m
+end
+
+function Details.pedestrians(map)
+	local folder = Instance.new("Folder")
+	folder.Name = "Pedestrians"
+	folder.Parent = map
+	local rng = Random.new(77)
+	-- Paseando por la plaza
+	for i = 1, 12 do
+		walker(folder, rng, {
+			WalkMode = "circle",
+			CenterX = 0,
+			CenterZ = 0,
+			Radius = 22 + (i % 4) * 7 + rng:NextNumber(-1.5, 1.5),
+			Speed = (i % 2 == 0 and 1 or -1) * rng:NextNumber(3.5, 5.5),
+			Phase = rng:NextNumber(0, 1),
+			BaseY = 0.6,
+		})
+	end
+	-- Por las aceras de las avenidas
+	for i = 1, 16 do
+		local sx = (i % 2 == 0) and 1 or -1
+		local sz = (i % 4 < 2) and 1 or -1
+		local a, b
+		if i <= 8 then
+			a = Vector3.new(sx * 66, 0.5, sz * 14)
+			b = Vector3.new(sx * 315, 0.5, sz * 14)
+		else
+			a = Vector3.new(sx * 14, 0.5, sz * 66)
+			b = Vector3.new(sx * 14, 0.5, sz * 175)
+		end
+		walker(folder, rng, {
+			WalkMode = "line",
+			A = a + Vector3.new(0, 0, rng:NextNumber(-0.8, 0.8)),
+			B = b,
+			Speed = rng:NextNumber(4, 6),
+			Phase = rng:NextNumber(0, 1),
+			BaseY = 0.5,
+		})
+	end
+	return folder
+end
+
+-- Clientes delante de un negocio (cantidad segun nivel)
+function Details.customers(parent, cf, level, size, seed)
+	local rng = Random.new(seed)
+	local count = math.min(3, 1 + math.floor((level - 1) / 2))
+	local spots = {
+		Vector3.new(-(size / 2 - 2.2), 0, -(size / 2 - 1.6)),
+		Vector3.new(size / 2 - 2.2, 0, -(size / 2 - 1.6)),
+		Vector3.new(-(size / 2 - 4.6), 0, -(size / 2 - 1.2)),
+	}
+	for i = 1, count do
+		local spot = spots[i]
+		local yaw = math.rad(180 + rng:NextNumber(-25, 25))
+		local person = Details.person(parent, cf * CFrame.new(spot + Vector3.new(0, 0.6, 0)) * CFrame.Angles(0, yaw, 0), rng)
+		person.Name = "Customer"
+		if i == 1 then
+			-- Saluda / celebra: brazo arriba
+			local arm = person:FindFirstChild("ArmR")
+			if arm then
+				arm.CFrame = arm.CFrame * CFrame.new(0, 0.8, 0) * CFrame.Angles(0, 0, math.rad(160))
+			end
+		end
+	end
+end
+
+------------------------------------------------------------------------------
+-- Calles
+------------------------------------------------------------------------------
+
+-- Paso de cebra: `cf` en el centro, rayas a lo largo de X local
+function Details.crosswalk(parent, cf, width, depth)
+	local n = math.floor(width / 2.4)
+	for i = 0, n - 1 do
+		local x = -width / 2 + 1.2 + i * 2.4
+		Kit.box(parent, "Zebra", Vector3.new(1.3, 0.06, depth), cf * CFrame.new(x, 0, 0), WHITE, Enum.Material.SmoothPlastic, { CanCollide = false, CastShadow = false })
+	end
+end
+
+function Details.trafficLight(parent, cf, phase)
+	local m = Kit.model(parent, "TrafficLight")
+	Kit.cylinder(m, "Pole", 9, 0.5, cf * CFrame.new(0, 4.5, 0), DARK, Enum.Material.Metal)
+	Kit.box(m, "Arm", Vector3.new(0.35, 0.35, 6), cf * CFrame.new(0, 8.8, -3), DARK, Enum.Material.Metal)
+	local head = cf * CFrame.new(0, 7.8, -5.6)
+	Kit.box(m, "Housing", Vector3.new(1.3, 3.6, 1.1), head, Color3.fromRGB(30, 30, 35))
+	local lamps = { { "Red", 1.1, Color3.fromRGB(255, 60, 60) }, { "Yellow", 0, Color3.fromRGB(255, 200, 40) }, { "Green", -1.1, Color3.fromRGB(70, 230, 100) } }
+	for _, l in ipairs(lamps) do
+		local lamp = Kit.box(m, l[1], Vector3.new(0.8, 0.8, 0.2), head * CFrame.new(0, l[2], -0.6), l[3], Enum.Material.SmoothPlastic, { CastShadow = false })
+		lamp:SetAttribute("OnColor", l[3])
+		Kit.box(m, "Visor", Vector3.new(0.9, 0.12, 0.5), head * CFrame.new(0, l[2] + 0.45, -0.8), Color3.fromRGB(30, 30, 35))
+	end
+	m:SetAttribute("Phase", phase or 0)
+	m:AddTag("TE_TrafficLight")
+	return m
+end
+
+local function hydrant(parent, cf)
+	local m = Kit.model(parent, "Hydrant")
+	local red = Color3.fromRGB(220, 50, 45)
+	Kit.cylinder(m, "Body", 2, 0.9, cf * CFrame.new(0, 1, 0), red)
+	Kit.ball(m, "Cap", 0.9, cf * CFrame.new(0, 2, 0), red)
+	Kit.cylinderX(m, "Nozzle", 1.3, 0.4, cf * CFrame.new(0, 1.3, 0), Color3.fromRGB(240, 200, 60))
+	return m
+end
+
+local function trashBin(parent, cf, color)
+	local m = Kit.model(parent, "TrashBin")
+	Kit.cylinder(m, "Bin", 2.4, 1.6, cf * CFrame.new(0, 1.2, 0), color or Color3.fromRGB(60, 140, 90), Enum.Material.Metal)
+	Kit.cylinder(m, "Lid", 0.25, 1.8, cf * CFrame.new(0, 2.5, 0), DARK, Enum.Material.Metal)
+	return m
+end
+
+local function mailbox(parent, cf)
+	local m = Kit.model(parent, "Mailbox")
+	local blue = Color3.fromRGB(50, 90, 200)
+	Kit.box(m, "Box", Vector3.new(1.6, 2.4, 1.4), cf * CFrame.new(0, 1.5, 0), blue, Enum.Material.Metal)
+	Kit.cylinderX(m, "Top", 1.6, 1.4, cf * CFrame.new(0, 2.7, 0) * CFrame.Angles(0, math.rad(90), 0), blue, Enum.Material.Metal)
+	Kit.box(m, "Slot", Vector3.new(0.9, 0.12, 0.05), cf * CFrame.new(0, 2.2, -0.72), DARK)
+	return m
+end
+
+local function planter(parent, cf, color)
+	local m = Kit.model(parent, "Planter")
+	Kit.box(m, "Pot", Vector3.new(2.4, 1.4, 2.4), cf * CFrame.new(0, 0.7, 0), Color3.fromRGB(190, 120, 80), Enum.Material.Brick)
+	Kit.ball(m, "Plant", 2.6, cf * CFrame.new(0, 2, 0), color or Color3.fromRGB(80, 170, 80), Enum.Material.Grass, { CanCollide = false })
+	return m
+end
+
+function Details.streetFurniture(map)
+	local folder = Kit.model(map, "StreetFurniture")
+	local items = { hydrant, trashBin, planter, mailbox }
+	local n = 0
+	for _, sx in ipairs({ -1, 1 }) do
+		for _, sz in ipairs({ -1, 1 }) do
+			for i = 0, 5 do
+				n += 1
+				local x = sx * (84 + i * 44)
+				local cf = CFrame.lookAt(Vector3.new(x, 0.5, sz * 15.3), Vector3.new(x, 0.5, 0))
+				items[(n % #items) + 1](folder, cf)
+			end
+			for i = 0, 2 do
+				n += 1
+				local z = sz * (84 + i * 40)
+				local cf = CFrame.lookAt(Vector3.new(sx * 15.3, 0.5, z), Vector3.new(0, 0.5, z))
+				items[(n % #items) + 1](folder, cf)
+			end
+		end
+	end
+	return folder
+end
+
+function Details.crossings(map, ringX, ringZ)
+	local folder = Kit.model(map, "Crossings")
+	-- Salidas de la plaza
+	for _, s in ipairs({ -1, 1 }) do
+		Details.crosswalk(folder, CFrame.new(0, 0.33, s * 64), 22, 4)
+		Details.crosswalk(folder, CFrame.new(s * 64, 0.33, 0) * CFrame.Angles(0, math.rad(90), 0), 22, 4)
+		-- Cruces con el anillo exterior
+		Details.crosswalk(folder, CFrame.new(0, 0.33, s * (ringZ - 16)), 22, 4)
+		Details.crosswalk(folder, CFrame.new(s * (ringX - 16), 0.33, 0) * CFrame.Angles(0, math.rad(90), 0), 22, 4)
+		-- Calles laterales
+		for _, sz in ipairs({ -1, 1 }) do
+			Details.crosswalk(folder, CFrame.new(s * 175, 0.33, sz * 16), 16, 3.5)
+		end
+	end
+	-- Semaforos en los cruces con el anillo
+	local phase = 0
+	for _, s in ipairs({ -1, 1 }) do
+		phase += 0.25
+		-- El brazo del semaforo (-Z local) apunta hacia el centro de la calzada
+		local function at(x, z, yaw)
+			return CFrame.new(x, 0.5, z) * CFrame.Angles(0, math.rad(yaw), 0)
+		end
+		Details.trafficLight(folder, at(15, s * (ringZ - 20), 90), phase)
+		Details.trafficLight(folder, at(-15, s * (ringZ - 20), -90), phase + 0.5)
+		Details.trafficLight(folder, at(s * (ringX - 20), 15, 0), phase + 0.5)
+		Details.trafficLight(folder, at(s * (ringX - 20), -15, 180), phase)
+	end
+	return folder
+end
+
+function Details.busStop(parent, cf)
+	local m = Kit.model(parent, "BusStop")
+	local frame = Color3.fromRGB(60, 65, 80)
+	for _, z in ipairs({ -4, 4 }) do
+		Kit.box(m, "Post", Vector3.new(0.4, 7, 0.4), cf * CFrame.new(-1.3, 3.5, z), frame, Enum.Material.Metal)
+		Kit.box(m, "Post", Vector3.new(0.4, 7, 0.4), cf * CFrame.new(1.3, 3.5, z), frame, Enum.Material.Metal)
+	end
+	Kit.box(m, "Roof", Vector3.new(4.2, 0.4, 9.4), cf * CFrame.new(0, 7.2, 0), Color3.fromRGB(240, 110, 60))
+	Kit.box(m, "BackGlass", Vector3.new(0.2, 5, 8), cf * CFrame.new(1.4, 3.6, 0), Color3.fromRGB(180, 220, 245), Enum.Material.Glass, { Transparency = 0.45 })
+	local ad = Kit.box(m, "Ad", Vector3.new(0.3, 4, 2.6), cf * CFrame.new(1.3, 3.6, 5.5), Color3.fromRGB(255, 200, 60), Enum.Material.Neon)
+	Kit.surfaceText(ad, "🍋 ¡Limonada fresca!", Enum.NormalId.Left, Color3.fromRGB(255, 200, 60), Color3.fromRGB(60, 40, 20))
+	Kit.box(m, "Seat", Vector3.new(1.4, 0.4, 7), cf * CFrame.new(0.5, 1.8, 0), Color3.fromRGB(150, 100, 60), Enum.Material.Wood)
+	local sign = Kit.box(m, "Sign", Vector3.new(0.2, 1.6, 1.6), cf * CFrame.new(-1.6, 8.4, -4), Color3.fromRGB(40, 120, 220))
+	Kit.surfaceText(sign, "🚌", Enum.NormalId.Left, Color3.fromRGB(40, 120, 220), WHITE)
+	Kit.surfaceText(sign, "🚌", Enum.NormalId.Right, Color3.fromRGB(40, 120, 220), WHITE)
+	return m
+end
+
+function Details.flag(parent, cf, color, text)
+	local m = Kit.model(parent, "FlagPole")
+	Kit.cylinder(m, "Pole", 16, 0.4, cf * CFrame.new(0, 8, 0), Color3.fromRGB(220, 220, 225), Enum.Material.Metal)
+	Kit.ball(m, "Finial", 0.8, cf * CFrame.new(0, 16.2, 0), Color3.fromRGB(255, 200, 60), Enum.Material.Foil)
+	local flagModel = Kit.model(m, "Flag")
+	local hinge = cf * CFrame.new(0, 14, 0)
+	local cloth = Kit.box(flagModel, "Cloth", Vector3.new(5, 3, 0.15), hinge * CFrame.new(2.7, 0, 0), color, Enum.Material.Fabric, { CanCollide = false })
+	Kit.box(flagModel, "Stripe", Vector3.new(5, 0.6, 0.17), hinge * CFrame.new(2.7, 0, 0), WHITE, Enum.Material.Fabric, { CanCollide = false })
+	if text then
+		Kit.surfaceText(cloth, text, Enum.NormalId.Front, nil, WHITE)
+		Kit.surfaceText(cloth, text, Enum.NormalId.Back, nil, WHITE)
+	end
+	flagModel.WorldPivot = hinge
+	flagModel:AddTag("TE_Sway")
+	flagModel:SetAttribute("SwayAngle", 18)
+	flagModel:SetAttribute("SwaySpeed", 0.6)
+	return m
+end
+
+------------------------------------------------------------------------------
+-- Cielo
+------------------------------------------------------------------------------
+
+function Details.clouds(map)
+	local folder = Instance.new("Folder")
+	folder.Name = "Clouds"
+	folder.Parent = map
+	local rng = Random.new(31)
+	for i = 1, 16 do
+		local m = Kit.model(folder, "Cloud")
+		local c = CFrame.new(rng:NextNumber(-650, 650), rng:NextNumber(150, 210), rng:NextNumber(-420, 420))
+		local puffs = rng:NextInteger(4, 7)
+		for j = 1, puffs do
+			local d = rng:NextNumber(18, 34)
+			Kit.ball(m, "Puff", d, c * CFrame.new((j - puffs / 2) * 13 + rng:NextNumber(-4, 4), rng:NextNumber(-3, 5), rng:NextNumber(-8, 8)), WHITE, Enum.Material.SmoothPlastic, {
+				CanCollide = false,
+				CanQuery = false,
+				CanTouch = false,
+				CastShadow = false,
+				Transparency = 0.08,
+			})
+		end
+		m.WorldPivot = c
+		m:SetAttribute("Speed", rng:NextNumber(2, 5))
+		m:AddTag("TE_Cloud")
+		local _ = i
+	end
+	return folder
+end
+
+------------------------------------------------------------------------------
+-- Detalles de azotea para las tiendas
+------------------------------------------------------------------------------
+
+function Details.rooftop(parent, cf, w, d, rng)
+	local roll = rng:NextNumber()
+	if roll < 0.45 then
+		Kit.box(parent, "ACUnit", Vector3.new(3, 1.6, 2.4), cf * CFrame.new(-w / 4, 0.8, d / 6), Color3.fromRGB(200, 205, 210), Enum.Material.Metal)
+		Kit.cylinderX(parent, "Fan", 0.2, 1.4, cf * CFrame.new(-w / 4, 1.65, d / 6) * CFrame.Angles(0, 0, math.rad(90)), DARK)
+		Kit.box(parent, "Vent", Vector3.new(1, 1.8, 1), cf * CFrame.new(w / 4, 0.9, -d / 6), Color3.fromRGB(170, 170, 175), Enum.Material.Metal)
+	elseif roll < 0.75 then
+		local tank = cf * CFrame.new(w / 5, 0, d / 6)
+		for _, x in ipairs({ -1.2, 1.2 }) do
+			for _, z in ipairs({ -1.2, 1.2 }) do
+				Kit.box(parent, "TankLeg", Vector3.new(0.3, 2.4, 0.3), tank * CFrame.new(x, 1.2, z), Color3.fromRGB(110, 80, 60), Enum.Material.Wood)
+			end
+		end
+		Kit.cylinder(parent, "WaterTank", 3, 3.4, tank * CFrame.new(0, 3.9, 0), Color3.fromRGB(140, 100, 70), Enum.Material.WoodPlanks)
+		Kit.cylinder(parent, "TankRoof", 0.6, 3.8, tank * CFrame.new(0, 5.6, 0), Color3.fromRGB(90, 90, 100), Enum.Material.Metal)
+	else
+		Kit.cylinder(parent, "Antenna", 5, 0.25, cf * CFrame.new(w / 4, 2.5, 0), Color3.fromRGB(170, 170, 180), Enum.Material.Metal)
+		local dish = Kit.cylinder(parent, "Dish", 0.3, 2.2, cf * CFrame.new(-w / 4, 1.3, 0) * CFrame.Angles(math.rad(35), 0, 0), WHITE)
+		local _ = dish
+		Kit.flowerBed(parent, cf * CFrame.new(0, 0, d / 4), w * 0.5, 2)
+	end
+end
+
+return Details
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="24">
           <Properties>
             <string name="Name">Kit</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -3553,7 +4209,7 @@ return Kit
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="21">
+        <Item class="ModuleScript" referent="25">
           <Properties>
             <string name="Name">Palettes</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -3674,7 +4330,7 @@ return Palettes
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="22">
+        <Item class="ModuleScript" referent="26">
           <Properties>
             <string name="Name">PlotBuilder</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -3871,6 +4527,19 @@ function PlotBuilder.create(parent, def)
 	bb.Name = "OwnerBillboard"
 	bbLabel.Name = "OwnerLabel"
 
+	-- Seto trasero y laterales, buzon con el nombre del dueno
+	local hedgeColor = Color3.fromRGB(60, 140, 70)
+	for i = 0, 4 do
+		Kit.box(static, "Hedge", Vector3.new(18, 2.4, 2), cf * CFrame.new(-44 + i * 22, 1.2, 57.5), hedgeColor, Enum.Material.Grass)
+	end
+	for _, x in ipairs({ -57.5, 57.5 }) do
+		Kit.box(static, "Hedge", Vector3.new(2, 2.4, 16), cf * CFrame.new(x, 1.2, 46), hedgeColor, Enum.Material.Grass)
+	end
+	local mail = cf * CFrame.new(-25, 0, -58)
+	Kit.box(static, "MailPost", Vector3.new(0.4, 3, 0.4), mail * CFrame.new(0, 1.5, 0), Color3.fromRGB(110, 80, 60), Enum.Material.Wood)
+	Kit.box(static, "Mailbox", Vector3.new(1.4, 1.2, 2), mail * CFrame.new(0, 3.4, 0), pal.accent, Enum.Material.Metal)
+	Kit.box(static, "MailFlag", Vector3.new(0.15, 0.9, 0.3), mail * CFrame.new(0.78, 3.7, 0.4), Color3.fromRGB(230, 50, 50))
+
 	-- Arboles de la esquina trasera (decoracion fija)
 	Kit.tree(static, cf * CFrame.new(-55, 0, 56), pal.tree, pal.treeColor)
 	Kit.tree(static, cf * CFrame.new(55, 0, 56), pal.tree, pal.treeColor)
@@ -3975,13 +4644,13 @@ function PlotBuilder.buildExtras(plot, def, data, palette, hasDecor)
 	if up["u_solar"] then
 		for i = 0, 6 do
 			local z = -15 + i * 10
-			local pcf = cf * CFrame.new(55, 0, z)
+			local pcf = cf * CFrame.new(53, 0, z)
 			Kit.box(extras, "SolarLeg", Vector3.new(0.4, 2.4, 0.4), pcf * CFrame.new(0, 1.2, 0), Color3.fromRGB(150, 150, 160), Enum.Material.Metal)
 			Kit.box(extras, "SolarPanel", Vector3.new(7, 0.3, 8), pcf * CFrame.new(0, 2.8, 0) * CFrame.Angles(0, 0, math.rad(25)), Color3.fromRGB(40, 70, 140), Enum.Material.Glass, { Reflectance = 0.3 })
 		end
 	end
 	if up["u_heli"] then
-		local hcf = cf * CFrame.new(-54, 0, 6)
+		local hcf = cf * CFrame.new(-52, 0, 6)
 		Kit.cylinder(extras, "Helipad", 0.4, 10, hcf * CFrame.new(0, 0.2, 0), Color3.fromRGB(50, 55, 65))
 		local mark = Kit.box(extras, "HMark", Vector3.new(4, 0.05, 4), hcf * CFrame.new(0, 0.43, 0), Color3.fromRGB(50, 55, 65))
 		Kit.surfaceText(mark, "H", Enum.NormalId.Top, nil, Color3.fromRGB(255, 220, 60))
@@ -4068,7 +4737,7 @@ return PlotBuilder
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="23">
+        <Item class="ModuleScript" referent="27">
           <Properties>
             <string name="Name">WorldBuilder</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -4079,6 +4748,7 @@ local Lighting = game:GetService("Lighting")
 
 local Kit = require(script.Parent.Kit)
 local Palettes = require(script.Parent.Palettes)
+local Details = require(script.Parent.Details)
 
 local WorldBuilder = {}
 
@@ -4367,6 +5037,12 @@ local function buildPlaza(map)
 		{ text = "Puerto Industrial", dir = Vector3.new(-1, 0, -0.3), color = Color3.fromRGB(230, 150, 40) },
 		{ text = "Costa Sol", dir = Vector3.new(1, 0, -0.3), color = Color3.fromRGB(40, 180, 200) },
 	})
+	-- Banderas y parada de autobus
+	Details.flag(plaza, CFrame.new(28, 0.6, 50), Color3.fromRGB(255, 110, 70), "TINY EMPIRE")
+	Details.flag(plaza, CFrame.new(-28, 0.6, 50), Color3.fromRGB(80, 160, 255), "⭐")
+	Details.flag(plaza, CFrame.new(28, 0.6, -50), Color3.fromRGB(90, 200, 120), "⭐")
+	Details.flag(plaza, CFrame.new(-28, 0.6, -50), Color3.fromRGB(255, 200, 60), "TINY EMPIRE")
+	Details.busStop(plaza, CFrame.new(72, 0.2, 30))
 	-- Zona de recogida de maletines
 	local crates = Instance.new("Folder")
 	crates.Name = "Crates"
@@ -4439,6 +5115,13 @@ local function shop(parent, cf, pal, name, icon, floors)
 	Kit.surfaceText(sign, icon .. " " .. name, Enum.NormalId.Front, WHITE, pal.accent:Lerp(Color3.new(0, 0, 0), 0.25))
 	local glow = Kit.box(m, "Glow", Vector3.new(w - 3, 0.2, 0.2), cf * CFrame.new(0, 4.1, -d / 2 - 0.4), Color3.fromRGB(255, 230, 170), Enum.Material.Neon)
 	Kit.light(glow, Color3.fromRGB(255, 220, 160), 14, 1.2)
+	Details.rooftop(m, cf * CFrame.new(0, h + 0.8, 0), w, d, Random.new(#name * 31 + floors))
+	-- Escalon de entrada y macetas
+	Kit.box(m, "Step", Vector3.new(4, 0.4, 1.4), cf * CFrame.new(0, 0.2, -d / 2 - 0.7), Color3.fromRGB(200, 200, 205), Enum.Material.Concrete)
+	for _, x in ipairs({ -w / 2 + 1.2, w / 2 - 1.2 }) do
+		Kit.box(m, "Pot", Vector3.new(1.4, 1, 1.4), cf * CFrame.new(x, 0.5, -d / 2 - 1), Color3.fromRGB(190, 120, 80), Enum.Material.Brick)
+		Kit.ball(m, "Plant", 1.8, cf * CFrame.new(x, 1.6, -d / 2 - 1), Color3.fromRGB(80, 170, 80), Enum.Material.Grass, { CanCollide = false })
+	end
 	return m
 end
 
@@ -4700,6 +5383,10 @@ function WorldBuilder.build()
 
 	buildVehicles(map)
 	buildOutskirts(map)
+	Details.crossings(map, WorldBuilder.RingX, WorldBuilder.RingZ)
+	Details.streetFurniture(map)
+	Details.pedestrians(map)
+	Details.clouds(map)
 
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Name = "PlazaSpawn"
@@ -4731,25 +5418,25 @@ return WorldBuilder
       </Item>
     </Item>
   </Item>
-  <Item class="SoundService" referent="24">
+  <Item class="SoundService" referent="28">
     <Properties>
       <string name="Name">SoundService</string>
     </Properties>
   </Item>
-  <Item class="StarterPlayer" referent="25">
+  <Item class="StarterPlayer" referent="29">
     <Properties>
       <string name="Name">StarterPlayer</string>
       <float name="CameraMaxZoomDistance">160</float>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="26">
+    <Item class="StarterPlayerScripts" referent="30">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="Folder" referent="27">
+      <Item class="Folder" referent="31">
         <Properties>
           <string name="Name">TinyEmpireClient</string>
         </Properties>
-        <Item class="ModuleScript" referent="28">
+        <Item class="ModuleScript" referent="32">
           <Properties>
             <string name="Name">Animator</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -4812,6 +5499,9 @@ local function refreshTags(e)
 	e.bob = inst:HasTag("TE_Bob")
 	e.slide = inst:HasTag("TE_Slide")
 	e.pulse = inst:HasTag("TE_Pulse") and inst:IsA("BasePart")
+	e.sway = inst:HasTag("TE_Sway")
+	e.swayAngle = math.rad(inst:GetAttribute("SwayAngle") or 15)
+	e.swaySpeed = inst:GetAttribute("SwaySpeed") or 0.5
 	e.spinSpeed = math.rad(inst:GetAttribute("SpinSpeed") or 45)
 	e.spinAxis = inst:GetAttribute("SpinAxis") or "Y"
 	e.bobHeight = inst:GetAttribute("BobHeight") or 1
@@ -4832,7 +5522,7 @@ local function step(t)
 		if e.dirtyTags then
 			refreshTags(e)
 		end
-		local moved = e.spin or e.bob or e.slide
+		local moved = e.spin or e.bob or e.slide or e.sway
 		if moved then
 			local cf = e.base
 			if e.slide then
@@ -4847,6 +5537,9 @@ local function step(t)
 			end
 			if e.bob then
 				cf = cf + Vector3.new(0, math.sin((t + e.seed) * e.bobSpeed * math.pi) * e.bobHeight, 0)
+			end
+			if e.sway then
+				cf = cf * CFrame.Angles(0, math.sin((t + e.seed) * e.swaySpeed * math.pi * 2) * e.swayAngle, 0)
 			end
 			if e.spin then
 				local a = (t + e.seed) * e.spinSpeed
@@ -4932,6 +5625,130 @@ local function registerCar(model)
 		lane = model:GetAttribute("Lane") or 1,
 		speed = model:GetAttribute("Speed") or 25,
 	})
+end
+
+------------------------------------------------------------------------------
+-- Peatones, semaforos y nubes
+------------------------------------------------------------------------------
+
+local walkers = {}
+local trafficLights = {}
+local clouds = {}
+
+local function registerWalker(model)
+	local pivot = model:GetPivot()
+	local parts = {}
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			local rel = pivot:ToObjectSpace(d.CFrame)
+			local limb = nil
+			if d.Name == "LegL" or (d.Name == "Shoe" and rel.Position.X < 0) then
+				limb = "legL"
+			elseif d.Name == "LegR" or (d.Name == "Shoe" and rel.Position.X > 0) then
+				limb = "legR"
+			elseif d.Name == "ArmL" then
+				limb = "armL"
+			elseif d.Name == "ArmR" then
+				limb = "armR"
+			end
+			table.insert(parts, { part = d, rel = rel, limb = limb })
+		end
+	end
+	table.insert(walkers, {
+		model = model,
+		parts = parts,
+		mode = model:GetAttribute("WalkMode") or "circle",
+		cx = model:GetAttribute("CenterX") or 0,
+		cz = model:GetAttribute("CenterZ") or 0,
+		radius = model:GetAttribute("Radius") or 20,
+		a = model:GetAttribute("A") or Vector3.zero,
+		b = model:GetAttribute("B") or Vector3.new(10, 0, 0),
+		speed = model:GetAttribute("Speed") or 4,
+		phase = model:GetAttribute("Phase") or 0,
+		baseY = model:GetAttribute("BaseY") or 0.5,
+		active = true,
+	})
+end
+
+local HIP = CFrame.new(0, 2, 0)
+local SHOULDER = CFrame.new(0, 3.9, 0)
+
+local function stepWalkers(t, camPos)
+	for _, w in ipairs(walkers) do
+		if w.model.Parent and w.active then
+			local pos, dir
+			if w.mode == "line" then
+				local delta = w.b - w.a
+				local len = delta.Magnitude
+				local s = (w.phase * 2 * len + t * math.abs(w.speed)) % (2 * len)
+				if s < len then
+					pos = w.a + delta * (s / len)
+					dir = delta.Unit
+				else
+					pos = w.b - delta * ((s - len) / len)
+					dir = -delta.Unit
+				end
+			else
+				local ang = w.phase * math.pi * 2 + t * w.speed / w.radius
+				pos = Vector3.new(w.cx + math.cos(ang) * w.radius, 0, w.cz + math.sin(ang) * w.radius)
+				dir = Vector3.new(-math.sin(ang), 0, math.cos(ang)) * (w.speed >= 0 and 1 or -1)
+			end
+			pos = Vector3.new(pos.X, w.baseY, pos.Z)
+			local pivot = CFrame.lookAt(pos, pos + dir)
+			local swing = math.sin(t * math.abs(w.speed) * 1.9 + w.phase * 10) * 0.55
+			for _, p in ipairs(w.parts) do
+				local cf
+				if p.limb == "legL" or p.limb == "legR" then
+					local a = p.limb == "legL" and swing or -swing
+					cf = pivot * HIP * CFrame.Angles(a, 0, 0) * HIP:Inverse() * p.rel
+				elseif p.limb == "armL" or p.limb == "armR" then
+					local a = p.limb == "armL" and -swing or swing
+					cf = pivot * SHOULDER * CFrame.Angles(a * 0.8, 0, 0) * SHOULDER:Inverse() * p.rel
+				else
+					cf = pivot * p.rel
+				end
+				p.part.CFrame = cf
+			end
+		end
+	end
+	local _ = camPos
+end
+
+local function updateWalkersActive(camPos)
+	for _, w in ipairs(walkers) do
+		local root = w.parts[1]
+		w.active = root ~= nil and (root.part.Position - camPos).Magnitude < 260
+	end
+end
+
+local function stepTrafficLights(t)
+	for _, tl in ipairs(trafficLights) do
+		if tl.model.Parent then
+			local cycle = (t / 12 + tl.phase) % 1
+			local state = cycle < 0.42 and "Green" or (cycle < 0.54 and "Yellow" or "Red")
+			if state ~= tl.state then
+				tl.state = state
+				for _, name in ipairs({ "Red", "Yellow", "Green" }) do
+					local lamp = tl.model:FindFirstChild(name)
+					if lamp then
+						local on = name == state
+						lamp.Material = on and Enum.Material.Neon or Enum.Material.SmoothPlastic
+						local c = lamp:GetAttribute("OnColor") or Color3.new(1, 1, 1)
+						lamp.Color = on and c or c:Lerp(Color3.new(0.1, 0.1, 0.1), 0.75)
+					end
+				end
+			end
+		end
+	end
+end
+
+local function stepClouds(t)
+	for _, c in ipairs(clouds) do
+		if c.model.Parent then
+			local x = ((c.base.Position.X + t * c.speed + 700) % 1400) - 700
+			c.model:PivotTo(CFrame.new(x, c.base.Position.Y, c.base.Position.Z))
+		end
+	end
 end
 
 ------------------------------------------------------------------------------
@@ -5088,7 +5905,7 @@ end
 ------------------------------------------------------------------------------
 
 function Animator.start(map)
-	for _, tag in ipairs({ "TE_Spin", "TE_Bob", "TE_Slide", "TE_Pulse" }) do
+	for _, tag in ipairs({ "TE_Spin", "TE_Bob", "TE_Slide", "TE_Pulse", "TE_Sway" }) do
 		for _, inst in ipairs(CollectionService:GetTagged(tag)) do
 			register(inst)
 		end
@@ -5097,6 +5914,15 @@ function Animator.start(map)
 	end
 	for _, car in ipairs(CollectionService:GetTagged("TE_Car")) do
 		registerCar(car)
+	end
+	for _, w in ipairs(CollectionService:GetTagged("TE_Walker")) do
+		registerWalker(w)
+	end
+	for _, tl in ipairs(CollectionService:GetTagged("TE_TrafficLight")) do
+		table.insert(trafficLights, { model = tl, phase = tl:GetAttribute("Phase") or 0, state = nil })
+	end
+	for _, c in ipairs(CollectionService:GetTagged("TE_Cloud")) do
+		table.insert(clouds, { model = c, base = c:GetPivot(), speed = c:GetAttribute("Speed") or 3 })
 	end
 
 	-- Construccion animada de edificios nuevos (en cualquier parcela)
@@ -5123,12 +5949,18 @@ function Animator.start(map)
 	RunService.RenderStepped:Connect(function(dt)
 		local t = os.clock() - start
 		acc += dt
+		local cam = workspace.CurrentCamera
+		local camPos = cam and cam.CFrame.Position or Vector3.zero
 		if acc > 0.5 then
 			acc = 0
 			updateActive()
+			updateWalkersActive(camPos)
+			stepTrafficLights(t)
 		end
 		step(t)
 		stepCars(t)
+		stepWalkers(t, camPos)
+		stepClouds(t)
 	end)
 	task.spawn(popupLoop, plotsFolder)
 end
@@ -5137,7 +5969,7 @@ return Animator
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="29">
+        <Item class="ModuleScript" referent="33">
           <Properties>
             <string name="Name">Effects</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -5267,7 +6099,7 @@ return Effects
 ]]></string>
           </Properties>
         </Item>
-        <Item class="LocalScript" referent="30">
+        <Item class="LocalScript" referent="34">
           <Properties>
             <string name="Name">Main</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -5431,7 +6263,7 @@ fire("requestState")
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="31">
+        <Item class="ModuleScript" referent="35">
           <Properties>
             <string name="Name">Store</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -5471,7 +6303,7 @@ return Store
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="32">
+        <Item class="ModuleScript" referent="36">
           <Properties>
             <string name="Name">Tutorial</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -5652,11 +6484,11 @@ return Tutorial
 ]]></string>
           </Properties>
         </Item>
-        <Item class="Folder" referent="33">
+        <Item class="Folder" referent="37">
           <Properties>
             <string name="Name">UI</string>
           </Properties>
-          <Item class="ModuleScript" referent="34">
+          <Item class="ModuleScript" referent="38">
             <Properties>
               <string name="Name">Hud</string>
               <string name="Source"><![CDATA[--!nonstrict
@@ -6115,13 +6947,14 @@ return Hud
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="35">
+          <Item class="ModuleScript" referent="39">
             <Properties>
               <string name="Name">Panels</string>
               <string name="Source"><![CDATA[--!nonstrict
 -- Ventanas: Imperio (negocios, mejoras, expansion), Retos y Tienda.
 
 local TweenService = game:GetService("TweenService")
+local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("TinyEmpireShared")
@@ -6255,8 +7088,41 @@ end
 local function iconBox(parent, icon, color, size)
 	local box = Theme.panel({ Size = UDim2.fromOffset(size, size), Position = UDim2.fromOffset(10, 10), BackgroundColor3 = color, Parent = parent, Radius = 14 })
 	Theme.gradient(Color3.new(1, 1, 1), Color3.fromRGB(170, 170, 180), 120).Parent = box
-	Theme.label({ Text = icon, Size = UDim2.fromScale(0.8, 0.8), Position = UDim2.fromScale(0.1, 0.1), MaxText = 48, Parent = box })
+	Theme.label({ Name = "Emoji", Text = icon, Size = UDim2.fromScale(0.8, 0.8), Position = UDim2.fromScale(0.1, 0.1), MaxText = 48, Parent = box })
 	return box
+end
+
+-- Usa la imagen oficial del pase/producto (subida en el Creator Dashboard) si existe
+local iconCache = {}
+local function useStoreIcon(box, assetId, infoType)
+	if not assetId or assetId <= 0 or box:GetAttribute("IconLoaded") then
+		return
+	end
+	box:SetAttribute("IconLoaded", true)
+	task.spawn(function()
+		local image = iconCache[assetId]
+		if not image then
+			local ok, info = pcall(function()
+				return MarketplaceService:GetProductInfo(assetId, infoType)
+			end)
+			if ok and info and info.IconImageAssetId and info.IconImageAssetId > 0 then
+				image = "rbxassetid://" .. info.IconImageAssetId
+				iconCache[assetId] = image
+			end
+		end
+		if image and box.Parent then
+			new("ImageLabel", {
+				Name = "StoreIcon",
+				Size = UDim2.fromScale(1, 1),
+				BackgroundTransparency = 1,
+				Image = image,
+				ScaleType = Enum.ScaleType.Fit,
+				Parent = box,
+			})
+			Theme.corner(14).Parent = box.StoreIcon
+			box.Emoji.Visible = false
+		end
+	end)
 end
 
 local function sectionHeader(parent, text, order, color)
@@ -6585,7 +7451,8 @@ local function buildShop()
 	for i, key in ipairs(Config.GamePassOrder) do
 		local p = Config.GamePasses[key]
 		local f = card(page, 100, 1 + i, C.gold)
-		iconBox(f, p.icon, C.gold, 76)
+		local passIcon = iconBox(f, p.icon, C.gold, 76)
+		useStoreIcon(passIcon, p.id, Enum.InfoType.GamePass)
 		Theme.label({ Text = p.name, Size = UDim2.new(1, -300, 0, 28), Position = UDim2.fromOffset(98, 10), TextXAlignment = Enum.TextXAlignment.Left, MaxText = 23, Parent = f })
 		Theme.label({ Text = p.desc, Size = UDim2.new(1, -300, 0, 48), Position = UDim2.fromOffset(98, 42), TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextWrapped = true, TextColor3 = C.muted, Font = Theme.Bold, MaxText = 15, Parent = f })
 		local btn = Theme.button({
@@ -6613,7 +7480,8 @@ local function buildShop()
 	for i, key in ipairs(Config.ProductOrder) do
 		local p = Config.Products[key]
 		local f = card(page, 92, 5 + i, C.green)
-		iconBox(f, p.icon, C.green, 70)
+		local productIcon = iconBox(f, p.icon, C.green, 70)
+		useStoreIcon(productIcon, p.id, Enum.InfoType.Product)
 		Theme.label({ Text = p.name, Size = UDim2.new(1, -300, 0, 28), Position = UDim2.fromOffset(92, 10), TextXAlignment = Enum.TextXAlignment.Left, MaxText = 23, Parent = f })
 		local amount = Theme.label({ Text = "", Size = UDim2.new(1, -300, 0, 40), Position = UDim2.fromOffset(92, 42), TextXAlignment = Enum.TextXAlignment.Left, TextColor3 = C.green, MaxText = 26, Parent = f })
 		local btn = Theme.button({
@@ -6768,7 +7636,7 @@ return Panels
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="36">
+          <Item class="ModuleScript" referent="40">
             <Properties>
               <string name="Name">Theme</string>
               <string name="Source"><![CDATA[--!nonstrict
@@ -7047,7 +7915,7 @@ return Theme
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="37">
+  <Item class="Workspace" referent="41">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">196.2</float>

@@ -192,6 +192,19 @@ function PlotBuilder.create(parent, def)
 	bb.Name = "OwnerBillboard"
 	bbLabel.Name = "OwnerLabel"
 
+	-- Seto trasero y laterales, buzon con el nombre del dueno
+	local hedgeColor = Color3.fromRGB(60, 140, 70)
+	for i = 0, 4 do
+		Kit.box(static, "Hedge", Vector3.new(18, 2.4, 2), cf * CFrame.new(-44 + i * 22, 1.2, 57.5), hedgeColor, Enum.Material.Grass)
+	end
+	for _, x in ipairs({ -57.5, 57.5 }) do
+		Kit.box(static, "Hedge", Vector3.new(2, 2.4, 16), cf * CFrame.new(x, 1.2, 46), hedgeColor, Enum.Material.Grass)
+	end
+	local mail = cf * CFrame.new(-25, 0, -58)
+	Kit.box(static, "MailPost", Vector3.new(0.4, 3, 0.4), mail * CFrame.new(0, 1.5, 0), Color3.fromRGB(110, 80, 60), Enum.Material.Wood)
+	Kit.box(static, "Mailbox", Vector3.new(1.4, 1.2, 2), mail * CFrame.new(0, 3.4, 0), pal.accent, Enum.Material.Metal)
+	Kit.box(static, "MailFlag", Vector3.new(0.15, 0.9, 0.3), mail * CFrame.new(0.78, 3.7, 0.4), Color3.fromRGB(230, 50, 50))
+
 	-- Arboles de la esquina trasera (decoracion fija)
 	Kit.tree(static, cf * CFrame.new(-55, 0, 56), pal.tree, pal.treeColor)
 	Kit.tree(static, cf * CFrame.new(55, 0, 56), pal.tree, pal.treeColor)
@@ -296,13 +309,13 @@ function PlotBuilder.buildExtras(plot, def, data, palette, hasDecor)
 	if up["u_solar"] then
 		for i = 0, 6 do
 			local z = -15 + i * 10
-			local pcf = cf * CFrame.new(55, 0, z)
+			local pcf = cf * CFrame.new(53, 0, z)
 			Kit.box(extras, "SolarLeg", Vector3.new(0.4, 2.4, 0.4), pcf * CFrame.new(0, 1.2, 0), Color3.fromRGB(150, 150, 160), Enum.Material.Metal)
 			Kit.box(extras, "SolarPanel", Vector3.new(7, 0.3, 8), pcf * CFrame.new(0, 2.8, 0) * CFrame.Angles(0, 0, math.rad(25)), Color3.fromRGB(40, 70, 140), Enum.Material.Glass, { Reflectance = 0.3 })
 		end
 	end
 	if up["u_heli"] then
-		local hcf = cf * CFrame.new(-54, 0, 6)
+		local hcf = cf * CFrame.new(-52, 0, 6)
 		Kit.cylinder(extras, "Helipad", 0.4, 10, hcf * CFrame.new(0, 0.2, 0), Color3.fromRGB(50, 55, 65))
 		local mark = Kit.box(extras, "HMark", Vector3.new(4, 0.05, 4), hcf * CFrame.new(0, 0.43, 0), Color3.fromRGB(50, 55, 65))
 		Kit.surfaceText(mark, "H", Enum.NormalId.Top, nil, Color3.fromRGB(255, 220, 60))

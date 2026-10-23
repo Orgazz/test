@@ -166,4 +166,16 @@ if __name__ == "__main__":
         kwargs["yaw"] = nums[3]
     if len(nums) >= 5:
         kwargs["pitch"] = nums[4]
-    render(scene, out, night=night, **kwargs)
+    for a in args:
+        if a.startswith("--size="):
+            w, h = a[7:].split("x")
+            kwargs["size"] = (int(w), int(h))
+    ss = 2 if "--aa" in args else 1
+    if ss > 1:
+        size = kwargs.get("size", (1600, 1000))
+        kwargs["size"] = (size[0] * ss, size[1] * ss)
+        render(scene, out, night=night, **kwargs)
+        from PIL import Image
+        Image.open(out).resize(size, Image.LANCZOS).save(out)
+    else:
+        render(scene, out, night=night, **kwargs)

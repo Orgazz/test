@@ -2,7 +2,7 @@
 
 Juego tycoon completo para Roblox: cada jugador recibe una parcela en una ciudad colorida y la convierte, negocio a negocio, de un puesto de limonada en un complejo empresarial con fábricas, laboratorio y rascacielos.
 
-![Mapa](docs/img/mapa.png)
+![Miniatura](assets/miniatura_parcela.png)
 
 | Parcela con todo desbloqueado | Tema premium «Ciudad Dorada» |
 |---|---|
@@ -13,6 +13,26 @@ Juego tycoon completo para Roblox: cada jugador recibe una parcela en una ciudad
 | ![HUD](docs/img/ui_hud.png) | ![Imperio](docs/img/ui_empire.png) | ![Tienda](docs/img/ui_shop.png) |
 
 > Las imágenes son vistas previas generadas fuera de Roblox (`tools/render.py` y `tools/render_gui.py`) a partir del mundo y la interfaz reales que crean los scripts. Los emojis aparecen como círculos porque el renderizador no tiene fuente de emojis; en Roblox se ven correctamente.
+
+---
+
+## 🎨 Imágenes incluidas (generadas para el juego)
+
+Todas están en [`assets/`](assets) y se regeneran con `python3 tools/make_images.py build assets`. Están dibujadas por código (sin recursos de terceros) en 512×512 o 1920×1080, listas para subir.
+
+| Icono del juego | Decoraciones Premium | Tema Ciudad Dorada | Productividad x2 |
+|---|---|---|---|
+| <img src="assets/icono_juego.png" width="140"> | <img src="assets/pase_decoraciones.png" width="140"> | <img src="assets/pase_tema_dorado.png" width="140"> | <img src="assets/pase_productividad_x2.png" width="140"> |
+
+| Maletín (29 R$) | Caja Fuerte (49 R$) | Camión Blindado (79 R$) |
+|---|---|---|
+| <img src="assets/producto_maletin_29.png" width="140"> | <img src="assets/producto_caja_fuerte_49.png" width="140"> | <img src="assets/producto_camion_79.png" width="140"> |
+
+Miniaturas: [`miniatura_parcela.png`](assets/miniatura_parcela.png), [`miniatura_ciudad.png`](assets/miniatura_ciudad.png), [`miniatura_plaza.png`](assets/miniatura_plaza.png).
+
+**Dónde usarlas**
+- *Creator Dashboard → tu experiencia → Places/Configure → Icon* → `icono_juego.png`; *Thumbnails* → las 3 miniaturas.
+- Al crear cada pase o producto, súbele su imagen. **La tienda del juego la muestra automáticamente** (la lee con `MarketplaceService:GetProductInfo`); mientras no haya ID se usa un emoji.
 
 ---
 
@@ -43,14 +63,16 @@ Juego tycoon completo para Roblox: cada jugador recibe una parcela en una ciudad
 
 ## 🎮 Contenido
 
-**Mapa** (generado por código, ~3.500 piezas)
+**Mapa** (generado por código, ~4.800 piezas)
 - Plaza central con fuente, mosaico, bancos, árboles, escenario «Zona Social» con pista de baile de neón, quioscos, arco de bienvenida, paneles «Cómo jugar» y «Ranking del servidor», autobús y maletines de bonificación.
 - 4 barrios con estilo propio, cada uno con 2 parcelas (8 en total):
   - **Barrio Pastel**: cerezos en flor, colores pastel.
   - **Distrito Verde**: pinos, estanque y vallas de madera.
   - **Puerto Industrial**: muelle, contenedores y grúa portuaria animada.
   - **Costa Sol**: palmeras, playa con sombrillas y mar.
-- Avenidas, anillo exterior con 12 vehículos que circulan, calles laterales, aceras, farolas, 16 tiendas decorativas, casas, arboledas y colinas en el horizonte.
+- Avenidas, anillo exterior con 12 vehículos que circulan, calles laterales, aceras, farolas, 16 tiendas decorativas (con aires acondicionados, depósitos de agua, antenas y macetas), casas, arboledas y colinas en el horizonte.
+- Vida urbana: 28 peatones que caminan por la plaza y las aceras (con balanceo de brazos y piernas), clientes delante de cada negocio (más clientes cuanto más nivel), 8 semáforos que cambian de color, pasos de cebra, bocas de incendio, papeleras, buzones, macetas, parada de autobús, banderas que ondean y nubes que cruzan el cielo.
+- Pantalla de carga animada (skyline que crece, título con rebote y consejos).
 - Señalización: arcos de barrio, postes indicadores, carteles de parcela y paneles informativos.
 
 **Parcelas** (120×120 studs, 3 zonas)
@@ -147,7 +169,7 @@ tools/                       Comprobación completa y renderizadores de vista pr
 
 Descarga Rojo, Lune y luau-lsp, analiza todo el código con las definiciones de la API de Roblox, compila el lugar, ejecuta las pruebas y genera `TinyEmpireTycoon.rbxl` con el mapa horneado (`tools/bake.luau`). Pruebas:
 
-- **`tests/run.luau`** — 138 comprobaciones ejecutando los scripts reales del juego en un motor simulado (instancias validadas contra la API de Roblox, tiempo virtual, DataStore y Marketplace simulados): creación del mundo y de parcelas, compras con botones y menús, mejoras, expansiones, objetivos, retos diarios y cambio de día, maletines, recibos sin duplicados (incluido fallo de guardado y reintento), pases, reingreso con datos restaurados y ganancias offline, bloqueo de sesión entre servidores, 8 jugadores simultáneos + expulsión del noveno, protección de parcelas, límites de peticiones, HUD/menús/tienda del cliente y 40 h de progresión gratis simulada.
+- **`tests/run.luau`** — 144 comprobaciones ejecutando los scripts reales del juego en un motor simulado (instancias validadas contra la API de Roblox, tiempo virtual, DataStore y Marketplace simulados): creación del mundo y de parcelas, compras con botones y menús, mejoras, expansiones, objetivos, retos diarios y cambio de día, maletines, recibos sin duplicados (incluido fallo de guardado y reintento), pases, reingreso con datos restaurados y ganancias offline, bloqueo de sesión entre servidores, 8 jugadores simultáneos + expulsión del noveno, protección de parcelas, límites de peticiones, HUD/menús/tienda del cliente y 40 h de progresión gratis simulada.
 - **`tests/run_nostore.luau`** — el juego funciona sin acceso a DataStore y avisa.
 - **`tests/balance.luau`** — ritmo de progresión de un jugador eficiente: Food Truck ~1 min, primera expansión ~8 min, Fábrica ~1 h, Torre Corporativa ~3 h, franquicia ~6 h.
 

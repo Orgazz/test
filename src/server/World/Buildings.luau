@@ -9,6 +9,7 @@
 --   TE_Pulse (PulseSpeed) neon que parpadea suavemente
 
 local Kit = require(script.Parent.Kit)
+local Details = require(script.Parent.Details)
 
 local Buildings = {}
 
@@ -280,7 +281,7 @@ builders.bakery = function(m, cf, L, pal, S)
 	local wall = Color3.fromRGB(245, 225, 190)
 	local floors = L >= 3 and 2 or 1
 	local body = cf * CFrame.new(0, 0, 2)
-	local top = block(m, body, 13, 9, 7 * floors, 0.6, wall, { rows = floors, cols = 3, trim = Color3.fromRGB(140, 90, 60), sill = Color3.fromRGB(140, 90, 60) })
+	local top = block(m, body, 13, 9, 7 * floors, 0.6, wall, { rows = floors, cols = 3, trim = Color3.fromRGB(140, 90, 60), sill = Color3.fromRGB(140, 90, 60), material = Enum.Material.Brick })
 	gable(m, body, 13, 9, 4, top, Color3.fromRGB(170, 70, 50))
 	door(m, body, 0, -4.5, Color3.fromRGB(150, 90, 50))
 	frontSign(m, body, "🥐 PANADERÍA", 7.6 * floors - 0.5, -4.5, 9, Color3.fromRGB(140, 90, 60), Color3.fromRGB(255, 235, 200))
@@ -321,7 +322,7 @@ builders.cafe = function(m, cf, L, pal, S)
 	local brown = Color3.fromRGB(120, 80, 60)
 	local floors = (L >= 5 and 3) or (L >= 3 and 2) or 1
 	local body = cf * CFrame.new(0, 0, 3)
-	local top = block(m, body, 14, 10, 6.5 * floors, 0.6, Color3.fromRGB(235, 220, 200), { rows = floors, cols = 3, trim = brown })
+	local top = block(m, body, 14, 10, 6.5 * floors, 0.6, Color3.fromRGB(235, 220, 200), { rows = floors, cols = 3, trim = brown, material = Enum.Material.Concrete })
 	-- Escaparate grande
 	Kit.box(m, "Storefront", Vector3.new(10, 4.5, 0.3), body * CFrame.new(0, 3, -5.15), GLASS, Enum.Material.Glass, { Transparency = 0.25 })
 	door(m, body, 5.5, -5, brown, 2.2, 4.5)
@@ -640,6 +641,12 @@ function Buildings.build(parent, id, cf, level, palette, footprint)
 	if builder then
 		builder(m, cf, level, palette, footprint)
 	end
+	-- Clientes en la puerta: mas negocio, mas gente
+	local seed = level * 97
+	for i = 1, #id do
+		seed += string.byte(id, i) * i
+	end
+	Details.customers(m, cf, level, footprint, seed)
 	if palette.premium then
 		-- Tema dorado: bordes dorados y luces violetas
 		local f = footprint - 2
