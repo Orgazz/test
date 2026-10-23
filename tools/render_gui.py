@@ -148,6 +148,8 @@ class Renderer:
     def visit(self, node, rect, clip, z):
         """Dibuja `node` (ya colocado en rect) y sus hijos."""
         x, y, w, h = rect
+        self.rects = getattr(self, "rects", {})
+        self.rects.setdefault(node.get("name"), rect)
         if node.get("class") == "ScrollingFrame" or (clip is None):
             pass
         zi = z + node.get("z", 1)
@@ -179,7 +181,7 @@ class Renderer:
         for c, r in placed:
             self.visit(c, r, child_clip, zi)
 
-    def render(self, root, out):
+    def render(self, root, out, background=None):
         # Misma formula que Hud.autoScale
         s = max(0.55, min(1.15, min(self.H / 820, self.W / 1280)))
         vw, vh = self.W / s, self.H / s
@@ -188,7 +190,10 @@ class Renderer:
         for c, r in placed:
             self.visit(c, r, None, 0)
         img = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
-        bg = Image.open(sys.argv[4]).convert("RGBA").resize((self.W, self.H)) if len(sys.argv) > 4 else Image.new("RGBA", (self.W, self.H), (110, 170, 120, 255))
+        if background == "transparent":
+            bg = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
+        else:
+            bg = Image.open(sys.argv[4]).convert("RGBA").resize((self.W, self.H)) if len(sys.argv) > 4 else Image.new("RGBA", (self.W, self.H), (110, 170, 120, 255))
         img = bg
         for zi, _, kind, data in sorted(self.items, key=lambda t: (t[0], t[1])):
             layer = Image.new("RGBA", (self.W, self.H), (0, 0, 0, 0))
@@ -263,7 +268,11 @@ class Renderer:
                     a = layer.getchannel("A")
                     layer.putalpha(Image.fromarray(__import__("numpy").minimum(__import__("numpy").array(a), __import__("numpy").array(m))))
             img.alpha_composite(layer)
-        img.convert("RGB").save(out)
+        self.scale = s
+        if background == "transparent":
+            img.save(out)
+        else:
+            img.convert("RGB").save(out)
         print(out)
 
 
