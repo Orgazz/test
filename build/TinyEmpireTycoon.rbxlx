@@ -866,6 +866,7 @@ return Format
 -- Tiny Empire Tycoon :: arranque del servidor.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
 
 local World = script.Parent.World
@@ -878,6 +879,15 @@ local DataService = require(Services.DataService)
 local CrateService = require(Services.CrateService)
 local DayNightService = require(Services.DayNightService)
 local LeaderboardService = require(Services.LeaderboardService)
+
+-- Grupos de colision: efectos fisicos que no chocan con los jugadores
+for _, group in ipairs({ "TE_Players", "TE_Effects" }) do
+	if not PhysicsService:IsCollisionGroupRegistered(group) then
+		PhysicsService:RegisterCollisionGroup(group)
+	end
+end
+PhysicsService:CollisionGroupSetCollidable("TE_Effects", "TE_Players", false)
+PhysicsService:CollisionGroupSetCollidable("TE_Effects", "TE_Effects", false)
 
 -- Remotos
 local remotes = Instance.new("Folder")
@@ -898,7 +908,7 @@ remotes.Parent = ReplicatedStorage
 DayNightService.start()
 DataService.start()
 GameService.init(remotes)
-CrateService.init(map, GameService.collectCrate)
+CrateService.init(map, GameService.collectCrate, GameService.announceRain)
 LeaderboardService.start(map, GameService.getStates)
 
 Players.CharacterAutoLoads = true
@@ -1028,7 +1038,9 @@ return ChallengeService
           <Properties>
             <string name="Name">CrateService</string>
             <string name="Source"><![CDATA[--!nonstrict
--- Maletines de bonificacion que aparecen en la plaza central.
+-- Maletines de bonificacion que caen del cielo sobre la plaza central.
+--  * Son piezas fisicas: caen, rebotan y ruedan; al asentarse se anclan y giran.
+--  * Cada 5 minutos hay una "Lluvia de maletines" para todos los jugadores.
 -- Dan dinero proporcional al ingreso de quien los recoge (no quitan nada a nadie).
 
 local Players = game:GetService("Players")
@@ -1040,24 +1052,50 @@ local Config = require(ReplicatedStorage.TinyEmpireShared.Config)
 local CrateService = {}
 
 local folder = nil
-local onCollect = nil -- function(player, position)
+local onCollect = nil -- function(player, position): boolean
+local onRain = nil -- function()
 local rng = Random.new()
 
-local function spawnCrate()
+CrateService.RainInterval = 300
+CrateService.RainCount = 8
+CrateService.SettleTime = 3.5
+
+local function weld(a, b)
+	local w = Instance.new("WeldConstraint")
+	w.Part0 = a
+	w.Part1 = b
+	w.Parent = a
+end
+
+local function spawnCrate(force)
 	local active = #folder:GetChildren()
-	if active >= Config.Crates.maxActive then
+	if active >= Config.Crates.maxActive and not force then
+		return
+	end
+	if active >= Config.Crates.maxActive + CrateService.RainCount * 2 then
 		return
 	end
 	local a = rng:NextNumber(0, math.pi * 2)
 	local r = rng:NextNumber(14, 46)
-	local pos = Vector3.new(math.cos(a) * r, 2.6, math.sin(a) * r)
+	local ground = Vector3.new(math.cos(a) * r, 0, math.sin(a) * r)
+	local startPos = ground + Vector3.new(rng:NextNumber(-4, 4), rng:NextNumber(28, 40), rng:NextNumber(-4, 4))
 	local m = Instance.new("Model")
 	m.Name = "Briefcase"
-	local cf = CFrame.new(pos)
-	local body = Kit.box(m, "Body", Vector3.new(3, 2.2, 1), cf, Color3.fromRGB(140, 85, 45), Enum.Material.SmoothPlastic, { CanCollide = false })
-	Kit.box(m, "Band", Vector3.new(3.05, 0.4, 1.05), cf, Color3.fromRGB(255, 205, 60), Enum.Material.Foil, { CanCollide = false })
-	Kit.box(m, "Handle", Vector3.new(1.2, 0.5, 0.3), cf * CFrame.new(0, 1.3, 0), Color3.fromRGB(255, 205, 60), Enum.Material.Foil, { CanCollide = false })
-	local glow = Kit.ball(m, "Glow", 4.5, cf, Color3.fromRGB(255, 230, 120), Enum.Material.Neon, { Transparency = 0.8, CanCollide = false, CastShadow = false })
+	local cf = CFrame.new(startPos) * CFrame.Angles(rng:NextNumber(-0.6, 0.6), rng:NextNumber(0, 6.28), rng:NextNumber(-0.6, 0.6))
+	local body = Kit.box(m, "Body", Vector3.new(3, 2.2, 1.2), cf, Color3.fromRGB(140, 85, 45), Enum.Material.SmoothPlastic)
+	body.Anchored = false
+	body.CustomPhysicalProperties = PhysicalProperties.new(0.6, 0.45, 0.55, 1, 1)
+	local function attach(part)
+		part.Anchored = false
+		part.CanCollide = false
+		part.Massless = true
+		weld(body, part)
+		return part
+	end
+	attach(Kit.box(m, "Band", Vector3.new(3.05, 0.4, 1.25), cf, Color3.fromRGB(255, 205, 60), Enum.Material.Foil))
+	attach(Kit.box(m, "Handle", Vector3.new(1.2, 0.5, 0.3), cf * CFrame.new(0, 1.35, 0), Color3.fromRGB(255, 205, 60), Enum.Material.Foil))
+	local glow = attach(Kit.ball(m, "Glow", 4.5, cf, Color3.fromRGB(255, 230, 120), Enum.Material.Neon, { Transparency = 0.82, CastShadow = false }))
+	glow.CanQuery = false
 	Kit.sparkles(body, Color3.fromRGB(255, 230, 120), 8)
 	local light = Instance.new("PointLight")
 	light.Color = Color3.fromRGB(255, 220, 120)
@@ -1066,12 +1104,11 @@ local function spawnCrate()
 	light.Parent = glow
 	local _, label = Kit.billboard(body, "💼", UDim2.fromOffset(60, 60), Vector3.new(0, 3, 0), Color3.new(1, 1, 1), 90)
 	label.TextStrokeTransparency = 1
-	m.WorldPivot = cf
-	m:AddTag("TE_Spin")
-	m:SetAttribute("SpinSpeed", 90)
-	m:SetAttribute("SpinAxis", "Y")
+	local touch = attach(Kit.box(m, "Touch", Vector3.new(6, 6, 6), cf, Color3.new(1, 1, 1), Enum.Material.SmoothPlastic, { Transparency = 1 }))
+	touch.CanQuery = false
+	m.PrimaryPart = body
+
 	local taken = false
-	local touch = Kit.box(m, "Touch", Vector3.new(6, 6, 6), cf, Color3.new(1, 1, 1), Enum.Material.SmoothPlastic, { Transparency = 1, CanCollide = false })
 	touch.Touched:Connect(function(hit)
 		if taken then
 			return
@@ -1081,7 +1118,7 @@ local function spawnCrate()
 			return
 		end
 		taken = true
-		local ok = onCollect(player, pos)
+		local ok = onCollect(player, body.Position)
 		if ok then
 			m:Destroy()
 		else
@@ -1089,16 +1126,59 @@ local function spawnCrate()
 		end
 	end)
 	m.Parent = folder
-	task.delay(120, function()
+	-- Impulso inicial: cae girando
+	body.AssemblyLinearVelocity = Vector3.new(rng:NextNumber(-8, 8), -10, rng:NextNumber(-8, 8))
+	body.AssemblyAngularVelocity = Vector3.new(rng:NextNumber(-4, 4), rng:NextNumber(-6, 6), rng:NextNumber(-4, 4))
+	pcall(function()
+		body:SetNetworkOwner(nil) -- el servidor simula: nadie puede teletransportarlo
+	end)
+	-- Al asentarse: anclar en pie, flotar y girar (lo anima el cliente)
+	task.delay(CrateService.SettleTime, function()
+		if not m.Parent then
+			return
+		end
+		local p = body.Position
+		if p.Y < -20 or p.Magnitude > 200 then
+			m:Destroy() -- se salio de la plaza
+			return
+		end
+		body.Anchored = true
+		local rest = CFrame.new(p.X, math.max(p.Y, 1.7) + 0.9, p.Z)
+		body.CFrame = rest
+		m.WorldPivot = rest
+		m:SetAttribute("SpinSpeed", 90)
+		m:SetAttribute("SpinAxis", "Y")
+		m:SetAttribute("BobHeight", 0.5)
+		m:SetAttribute("BobSpeed", 1.2)
+		m:AddTag("TE_Spin")
+		m:AddTag("TE_Bob")
+	end)
+	task.delay(150, function()
 		if m.Parent then
 			m:Destroy()
 		end
 	end)
+	return m
 end
 
-function CrateService.init(map, collectHandler)
+function CrateService.spawn(force)
+	return spawnCrate(force)
+end
+
+-- Lluvia de maletines: varios a la vez durante unos segundos
+function CrateService.rain()
+	if onRain then
+		onRain()
+	end
+	for i = 1, CrateService.RainCount do
+		task.delay(i * 0.35, spawnCrate, true)
+	end
+end
+
+function CrateService.init(map, collectHandler, rainHandler)
 	folder = map:FindFirstChild("Crates")
 	onCollect = collectHandler
+	onRain = rainHandler
 	task.spawn(function()
 		task.wait(3)
 		for _ = 1, 3 do
@@ -1107,6 +1187,12 @@ function CrateService.init(map, collectHandler)
 		while true do
 			task.wait(Config.Crates.spawnInterval)
 			spawnCrate()
+		end
+	end)
+	task.spawn(function()
+		while true do
+			task.wait(CrateService.RainInterval)
+			CrateService.rain()
 		end
 	end)
 end
@@ -1666,12 +1752,14 @@ function Actions.buyBusiness(state, id)
 	state.data.businesses[id] = 1
 	state.data.stats.builds += 1
 	ChallengeService.progress(state, "builds", 1)
+	local where = nil
 	if state.plot then
-		PlotService.buildBusiness(state.plot, state, id, true)
+		local model = PlotService.buildBusiness(state.plot, state, id, true)
+		where = model and model:GetPivot().Position
 		DayNightService.applyTo(state.plot.model.Buildings)
 	end
 	notify(state.player, b.icon .. " ¡Has abierto " .. b.name .. "!", COLORS.good, "build")
-	effect(state.player, { kind = "build", id = id })
+	effect(state.player, { kind = "build", id = id, position = where })
 	refreshVisuals(state)
 	checkTutorial(state)
 	markDirty(state)
@@ -1700,12 +1788,14 @@ function Actions.upgradeBusiness(state, id)
 	state.data.stats.builds += 1
 	ChallengeService.progress(state, "levelUps", 1)
 	ChallengeService.progress(state, "builds", 1)
+	local where = nil
 	if state.plot then
-		PlotService.buildBusiness(state.plot, state, id, true)
+		local model = PlotService.buildBusiness(state.plot, state, id, true)
+		where = model and model:GetPivot().Position
 		DayNightService.applyTo(state.plot.model.Buildings)
 	end
 	notify(state.player, "⬆️ " .. b.name .. " sube a nivel " .. (level + 1) .. "!", COLORS.good, "levelup")
-	effect(state.player, { kind = "levelup", id = id, level = level + 1 })
+	effect(state.player, { kind = "levelup", id = id, level = level + 1, position = where })
 	refreshVisuals(state)
 	checkTutorial(state)
 	markDirty(state)
@@ -1999,10 +2089,12 @@ local function onPlayerAdded(player)
 	end
 	notify(player, "👋 ¡Bienvenido a Tiny Empire Tycoon, " .. player.DisplayName .. "!", COLORS.gold, "success")
 
-	player.CharacterAdded:Connect(function()
+	player.CharacterAdded:Connect(function(character)
+		GameService.setCollisionGroup(character)
 		task.defer(placeCharacter, state)
 	end)
 	if player.Character then
+		GameService.setCollisionGroup(player.Character)
 		task.defer(placeCharacter, state)
 	end
 end
@@ -2073,6 +2165,29 @@ end
 ------------------------------------------------------------------------------
 -- API publica para otros servicios
 ------------------------------------------------------------------------------
+
+-- Personajes en su propio grupo de colision: los efectos fisicos (monedas,
+-- escombros) rebotan en el suelo pero atraviesan a los jugadores.
+function GameService.setCollisionGroup(character)
+	local function apply(d)
+		if d:IsA("BasePart") then
+			d.CollisionGroup = "TE_Players"
+		end
+	end
+	for _, d in ipairs(character:GetDescendants()) do
+		apply(d)
+	end
+	character.DescendantAdded:Connect(apply)
+end
+
+function GameService.announceRain()
+	for player, state in pairs(states) do
+		if state.ready then
+			notify(player, "🌧️💼 ¡Lluvia de maletines en la plaza central! ¡Corre!", COLORS.gold, "success")
+			effect(player, { kind = "rain" })
+		end
+	end
+end
 
 function GameService.getState(player)
 	return states[player]
@@ -3683,18 +3798,32 @@ function Details.crossings(map, ringX, ringZ)
 			Details.crosswalk(folder, CFrame.new(s * 175, 0.33, sz * 16), 16, 3.5)
 		end
 	end
-	-- Semaforos en los cruces con el anillo
+	-- Semaforos: en cada cruce de una avenida con el anillo hay luces para la
+	-- avenida y luces (en fase opuesta) para el trafico del anillo, que se detiene en rojo.
+	local function at(x, z, yaw)
+		-- El brazo del semaforo (-Z local) apunta hacia el centro de la calzada
+		return CFrame.new(x, 0.5, z) * CFrame.Angles(0, math.rad(yaw), 0)
+	end
+	local function light(cf, phase, road, cx, cz)
+		local m = Details.trafficLight(folder, cf, phase)
+		m:SetAttribute("Road", road)
+		m:SetAttribute("CenterX", cx)
+		m:SetAttribute("CenterZ", cz)
+	end
 	local phase = 0
 	for _, s in ipairs({ -1, 1 }) do
+		-- Cruce de la avenida norte-sur con el anillo en (0, s * ringZ)
 		phase += 0.25
-		-- El brazo del semaforo (-Z local) apunta hacia el centro de la calzada
-		local function at(x, z, yaw)
-			return CFrame.new(x, 0.5, z) * CFrame.Angles(0, math.rad(yaw), 0)
-		end
-		Details.trafficLight(folder, at(15, s * (ringZ - 20), 90), phase)
-		Details.trafficLight(folder, at(-15, s * (ringZ - 20), -90), phase + 0.5)
-		Details.trafficLight(folder, at(s * (ringX - 20), 15, 0), phase + 0.5)
-		Details.trafficLight(folder, at(s * (ringX - 20), -15, 180), phase)
+		light(at(15, s * (ringZ - 20), 90), phase, "main", 0, s * ringZ)
+		light(at(-15, s * (ringZ - 20), -90), phase, "main", 0, s * ringZ)
+		light(at(14, s * (ringZ + 13), s > 0 and 0 or 180), phase + 0.5, "ring", 0, s * ringZ)
+		light(at(-14, s * (ringZ + 13), s > 0 and 0 or 180), phase + 0.5, "ring", 0, s * ringZ)
+		-- Cruce de la avenida este-oeste con el anillo en (s * ringX, 0)
+		phase += 0.25
+		light(at(s * (ringX - 20), 15, 0), phase, "main", s * ringX, 0)
+		light(at(s * (ringX - 20), -15, 180), phase, "main", s * ringX, 0)
+		light(at(s * (ringX + 13), 14, s > 0 and 90 or -90), phase + 0.5, "ring", s * ringX, 0)
+		light(at(s * (ringX + 13), -14, s > 0 and 90 or -90), phase + 0.5, "ring", s * ringX, 0)
 	end
 	return folder
 end
@@ -3721,18 +3850,53 @@ function Details.flag(parent, cf, color, text)
 	local m = Kit.model(parent, "FlagPole")
 	Kit.cylinder(m, "Pole", 16, 0.4, cf * CFrame.new(0, 8, 0), Color3.fromRGB(220, 220, 225), Enum.Material.Metal)
 	Kit.ball(m, "Finial", 0.8, cf * CFrame.new(0, 16.2, 0), Color3.fromRGB(255, 200, 60), Enum.Material.Foil)
+	-- Tela dividida en segmentos: el cliente los encadena para que ondee (TE_Flag)
 	local flagModel = Kit.model(m, "Flag")
 	local hinge = cf * CFrame.new(0, 14, 0)
-	local cloth = Kit.box(flagModel, "Cloth", Vector3.new(5, 3, 0.15), hinge * CFrame.new(2.7, 0, 0), color, Enum.Material.Fabric, { CanCollide = false })
-	Kit.box(flagModel, "Stripe", Vector3.new(5, 0.6, 0.17), hinge * CFrame.new(2.7, 0, 0), WHITE, Enum.Material.Fabric, { CanCollide = false })
+	local segments = 5
+	local segW = 5.4 / segments
+	for i = 1, segments do
+		local segColor = (i % 2 == 0) and color:Lerp(WHITE, 0.35) or color
+		Kit.box(flagModel, "Seg" .. i, Vector3.new(segW + 0.05, 3, 0.15), hinge * CFrame.new(segW * (i - 0.5) + 0.2, 0, 0), segColor, Enum.Material.Fabric, { CanCollide = false, CastShadow = false })
+	end
 	if text then
-		Kit.surfaceText(cloth, text, Enum.NormalId.Front, nil, WHITE)
-		Kit.surfaceText(cloth, text, Enum.NormalId.Back, nil, WHITE)
+		-- El texto va en un estandarte fijo bajo la bandera
+		local banner = Kit.box(m, "Banner", Vector3.new(3.4, 1, 0.2), cf * CFrame.new(1.9, 10.5, 0), color, Enum.Material.SmoothPlastic, { CanCollide = false })
+		Kit.box(m, "BannerArm", Vector3.new(3.6, 0.15, 0.15), cf * CFrame.new(1.9, 11.1, 0), Color3.fromRGB(220, 220, 225), Enum.Material.Metal)
+		Kit.surfaceText(banner, text, Enum.NormalId.Front, nil, WHITE)
+		Kit.surfaceText(banner, text, Enum.NormalId.Back, nil, WHITE)
 	end
 	flagModel.WorldPivot = hinge
-	flagModel:AddTag("TE_Sway")
-	flagModel:SetAttribute("SwayAngle", 18)
-	flagModel:SetAttribute("SwaySpeed", 0.6)
+	flagModel:SetAttribute("Segments", segments)
+	flagModel:SetAttribute("SegmentWidth", segW)
+	flagModel:AddTag("TE_Flag")
+	return m
+end
+
+------------------------------------------------------------------------------
+-- Trampolin (el cliente aplica el impulso al personaje local: fisica fluida)
+------------------------------------------------------------------------------
+
+function Details.trampoline(parent, cf, color)
+	local m = Kit.model(parent, "Trampoline")
+	local frame = Color3.fromRGB(60, 90, 200)
+	for i = 0, 5 do
+		local a = math.rad(i * 60 + 30)
+		Kit.box(m, "Leg", Vector3.new(0.5, 2.2, 0.5), cf * CFrame.new(math.cos(a) * 5.2, 1.1, math.sin(a) * 5.2), DARK, Enum.Material.Metal)
+	end
+	Kit.cylinder(m, "Rim", 0.8, 12, cf * CFrame.new(0, 2.4, 0), frame, Enum.Material.Metal)
+	for i = 0, 11 do
+		local a = math.rad(i * 30)
+		Kit.box(m, "Spring", Vector3.new(0.9, 0.25, 0.25), cf * CFrame.new(math.cos(a) * 5.2, 2.85, math.sin(a) * 5.2) * CFrame.Angles(0, -a, 0), Color3.fromRGB(200, 200, 210), Enum.Material.Metal)
+	end
+	local mat = Kit.cylinder(m, "Mat", 0.3, 9.6, cf * CFrame.new(0, 2.95, 0), color or Color3.fromRGB(255, 90, 160), Enum.Material.Fabric)
+	Kit.cylinder(m, "Ring", 0.32, 4, cf * CFrame.new(0, 2.96, 0), Color3.fromRGB(255, 230, 90), Enum.Material.Neon, { CanCollide = false })
+	mat:AddTag("TE_Trampoline")
+	mat:SetAttribute("Power", 115)
+	local sign = Kit.box(m, "Sign", Vector3.new(4, 1.2, 0.2), cf * CFrame.new(0, 4.6, 6.2), Color3.fromRGB(255, 220, 90))
+	Kit.surfaceText(sign, "¡SALTA!", Enum.NormalId.Front, Color3.fromRGB(255, 220, 90), DARK)
+	Kit.surfaceText(sign, "¡SALTA!", Enum.NormalId.Back, Color3.fromRGB(255, 220, 90), DARK)
+	Kit.box(m, "SignPost", Vector3.new(0.3, 3.6, 0.3), cf * CFrame.new(0, 2, 6.2), DARK, Enum.Material.Metal)
 	return m
 end
 
@@ -4095,6 +4259,12 @@ function Kit.tree(parent, cf, style, color)
 			d.CanCollide = d.Name == "Trunk"
 		end
 	end
+	-- Balanceo suave con el viento (lo anima el cliente desde la base del tronco)
+	m.WorldPivot = cf
+	m:AddTag("TE_Sway")
+	m:SetAttribute("SwayMode", "tilt")
+	m:SetAttribute("SwayAngle", style == "palm" and 3.5 or 2)
+	m:SetAttribute("SwaySpeed", 0.25 + (math.abs(cf.Position.X * 7 + cf.Position.Z * 13) % 10) / 60)
 	return m
 end
 
@@ -5043,6 +5213,9 @@ local function buildPlaza(map)
 	Details.flag(plaza, CFrame.new(28, 0.6, -50), Color3.fromRGB(90, 200, 120), "⭐")
 	Details.flag(plaza, CFrame.new(-28, 0.6, -50), Color3.fromRGB(255, 200, 60), "TINY EMPIRE")
 	Details.busStop(plaza, CFrame.new(72, 0.2, 30))
+	-- Trampolines (fisica de salto en el cliente)
+	Details.trampoline(plaza, CFrame.lookAt(Vector3.new(44, 0.6, 0), Vector3.new(0, 0.6, 0)), Color3.fromRGB(255, 90, 160))
+	Details.trampoline(plaza, CFrame.lookAt(Vector3.new(-44, 0.6, 0), Vector3.new(0, 0.6, 0)), Color3.fromRGB(80, 200, 255))
 	-- Zona de recogida de maletines
 	local crates = Instance.new("Folder")
 	crates.Name = "Crates"
@@ -5440,8 +5613,15 @@ return WorldBuilder
           <Properties>
             <string name="Name">Animator</string>
             <string name="Source"><![CDATA[--!nonstrict
--- Animaciones del mundo en el cliente (suaves y sin coste de red):
--- giros, flotacion, deslizamientos, neones, coches, construccion y "+$" flotantes.
+-- Animaciones del mundo en el cliente (suaves y sin coste de red).
+--   TE_Spin / TE_Bob / TE_Slide  movimiento de maquinas y objetos (con aceleracion
+--                                al aparecer y "squash & stretch" al flotar)
+--   TE_Pulse                     neones que laten
+--   TE_Sway                      balanceo: "yaw" (giro) o "tilt" (arboles al viento)
+--   TE_Flag                      banderas por segmentos que ondean como tela
+--   TE_Cloud                     nubes a la deriva
+-- Ademas: construccion animada, "+$" con trayectoria parabolica, botones de compra
+-- que laten, trafico (World/Traffic) y peatones (World/Pedestrians).
 
 local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
@@ -5449,12 +5629,23 @@ local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Format = require(ReplicatedStorage:WaitForChild("TinyEmpireShared").Format)
+local Traffic = require(script.Parent.World.Traffic)
+local Pedestrians = require(script.Parent.World.Pedestrians)
 
 local Animator = {}
 
 local entries = {} -- [Instance] = entry
-local cars = {}
+local flags = {}
+local clouds = {}
+local trafficLights = {}
+local pads = {}
+local popups = {}
 local ACTIVE_RANGE = 320
+
+-- Viento global: rafagas lentas que modulan arboles y banderas
+local function wind(t)
+	return 0.75 + 0.25 * math.sin(t * 0.21) + 0.15 * math.sin(t * 0.83 + 1.3)
+end
 
 local function pivotOf(inst)
 	if inst:IsA("Model") then
@@ -5484,6 +5675,7 @@ local function register(inst)
 		base = pivotOf(inst),
 		baseTransparency = inst:IsA("BasePart") and inst.Transparency or 0,
 		seed = math.random() * 10,
+		born = os.clock(),
 		active = true,
 		dirtyTags = true,
 	}
@@ -5500,6 +5692,7 @@ local function refreshTags(e)
 	e.slide = inst:HasTag("TE_Slide")
 	e.pulse = inst:HasTag("TE_Pulse") and inst:IsA("BasePart")
 	e.sway = inst:HasTag("TE_Sway")
+	e.swayMode = inst:GetAttribute("SwayMode") or "yaw"
 	e.swayAngle = math.rad(inst:GetAttribute("SwayAngle") or 15)
 	e.swaySpeed = inst:GetAttribute("SwaySpeed") or 0.5
 	e.spinSpeed = math.rad(inst:GetAttribute("SpinSpeed") or 45)
@@ -5511,10 +5704,20 @@ local function refreshTags(e)
 	e.slideMode = inst:GetAttribute("SlideMode") or "pingpong"
 	e.slidePhase = inst:GetAttribute("SlidePhase") or 0
 	e.pulseSpeed = inst:GetAttribute("PulseSpeed") or 1
+	e.spinAngle = e.spinAngle or 0
 	e.dirtyTags = false
 end
 
-local function step(t)
+-- Movimiento de vaiven con pausa en los extremos (como una maquina real)
+local function easedPingPong(phase)
+	local x = phase % 1
+	local f = x < 0.5 and x * 2 or (1 - x) * 2 -- triangulo 0..1..0
+	f = math.clamp((f - 0.08) / 0.84, 0, 1) -- pequenas pausas en los extremos
+	return f * f * (3 - 2 * f)
+end
+
+local function step(t, dt)
+	local w = wind(t)
 	for inst, e in pairs(entries) do
 		if not e.active then
 			continue
@@ -5527,22 +5730,27 @@ local function step(t)
 			local cf = e.base
 			if e.slide then
 				local phase = t * e.slideSpeed + e.slidePhase
-				local f
-				if e.slideMode == "loop" then
-					f = phase % 1
-				else
-					f = (1 - math.cos(phase * math.pi * 2)) / 2
-				end
+				local f = e.slideMode == "loop" and (phase % 1) or easedPingPong(phase)
 				cf = cf * CFrame.new(e.slideOffset * f)
 			end
 			if e.bob then
 				cf = cf + Vector3.new(0, math.sin((t + e.seed) * e.bobSpeed * math.pi) * e.bobHeight, 0)
 			end
 			if e.sway then
-				cf = cf * CFrame.Angles(0, math.sin((t + e.seed) * e.swaySpeed * math.pi * 2) * e.swayAngle, 0)
+				local s = math.sin((t + e.seed) * e.swaySpeed * math.pi * 2)
+				if e.swayMode == "tilt" then
+					-- Arbol: se inclina desde la base, con rafagas de viento
+					local s2 = math.sin((t + e.seed) * e.swaySpeed * 1.7 * math.pi * 2 + 1.1)
+					cf = cf * CFrame.Angles(s * e.swayAngle * w, 0, s2 * e.swayAngle * 0.6 * w)
+				else
+					cf = cf * CFrame.Angles(0, s * e.swayAngle, 0)
+				end
 			end
 			if e.spin then
-				local a = (t + e.seed) * e.spinSpeed
+				-- Arranque progresivo durante el primer segundo (inercia)
+				local ramp = math.clamp((os.clock() - e.born) / 1.2, 0, 1)
+				e.spinAngle += e.spinSpeed * dt * ramp * ramp
+				local a = e.spinAngle + e.seed
 				if e.spinAxis == "X" then
 					cf = cf * CFrame.Angles(a, 0, 0)
 				elseif e.spinAxis == "Z" then
@@ -5555,18 +5763,13 @@ local function step(t)
 		end
 		if e.pulse then
 			local s = (math.sin((t + e.seed) * e.pulseSpeed * math.pi * 2) + 1) / 2
-			inst.Transparency = e.baseTransparency + s * 0.45
+			inst.Transparency = e.baseTransparency + s * s * 0.45
 		end
 	end
 end
 
 -- Solo se animan objetos cercanos a la camara
-local function updateActive()
-	local cam = workspace.CurrentCamera
-	if not cam then
-		return
-	end
-	local camPos = cam.CFrame.Position
+local function updateActive(camPos)
 	for _, e in pairs(entries) do
 		local ok, pos = pcall(function()
 			return e.base.Position
@@ -5576,156 +5779,63 @@ local function updateActive()
 end
 
 ------------------------------------------------------------------------------
--- Coches por el anillo exterior
+-- Banderas: segmentos encadenados con onda que avanza hacia el extremo
 ------------------------------------------------------------------------------
 
-local function pointOnRing(rx, rz, s)
-	local w, h = rx * 2, rz * 2
-	local perim = 2 * (w + h)
-	s = s % perim
-	if s < w then
-		return Vector3.new(-rx + s, 0, -rz), Vector3.new(1, 0, 0)
-	end
-	s -= w
-	if s < h then
-		return Vector3.new(rx, 0, -rz + s), Vector3.new(0, 0, 1)
-	end
-	s -= h
-	if s < w then
-		return Vector3.new(rx - s, 0, rz), Vector3.new(-1, 0, 0)
-	end
-	s -= w
-	return Vector3.new(-rx, 0, rz - s), Vector3.new(0, 0, -1)
-end
-
-local function stepCars(t)
-	for _, car in ipairs(cars) do
-		if car.model.Parent then
-			local rx, rz = car.rx, car.rz
-			local perim = 2 * (rx * 2 + rz * 2)
-			local s = car.phase * perim + t * car.speed * car.lane
-			local pos, dir = pointOnRing(rx, rz, s)
-			if car.lane < 0 then
-				dir = -dir
-			end
-			local right = dir:Cross(Vector3.yAxis)
-			local p = pos + right * 5 + Vector3.new(0, 0.3, 0)
-			car.model:PivotTo(CFrame.lookAt(p, p + dir))
+local function registerFlag(model)
+	local segs = {}
+	local n = model:GetAttribute("Segments") or 5
+	for i = 1, n do
+		local seg = model:FindFirstChild("Seg" .. i)
+		if seg then
+			table.insert(segs, seg)
 		end
 	end
-end
-
-local function registerCar(model)
-	local folder = model.Parent
-	table.insert(cars, {
+	table.insert(flags, {
 		model = model,
-		rx = folder:GetAttribute("RingX") or 330,
-		rz = folder:GetAttribute("RingZ") or 185,
-		phase = model:GetAttribute("Phase") or 0,
-		lane = model:GetAttribute("Lane") or 1,
-		speed = model:GetAttribute("Speed") or 25,
+		segs = segs,
+		width = model:GetAttribute("SegmentWidth") or 1,
+		hinge = model:GetPivot(),
+		seed = math.random() * 10,
 	})
 end
 
-------------------------------------------------------------------------------
--- Peatones, semaforos y nubes
-------------------------------------------------------------------------------
-
-local walkers = {}
-local trafficLights = {}
-local clouds = {}
-
-local function registerWalker(model)
-	local pivot = model:GetPivot()
-	local parts = {}
-	for _, d in ipairs(model:GetDescendants()) do
-		if d:IsA("BasePart") then
-			local rel = pivot:ToObjectSpace(d.CFrame)
-			local limb = nil
-			if d.Name == "LegL" or (d.Name == "Shoe" and rel.Position.X < 0) then
-				limb = "legL"
-			elseif d.Name == "LegR" or (d.Name == "Shoe" and rel.Position.X > 0) then
-				limb = "legR"
-			elseif d.Name == "ArmL" then
-				limb = "armL"
-			elseif d.Name == "ArmR" then
-				limb = "armR"
-			end
-			table.insert(parts, { part = d, rel = rel, limb = limb })
-		end
-	end
-	table.insert(walkers, {
-		model = model,
-		parts = parts,
-		mode = model:GetAttribute("WalkMode") or "circle",
-		cx = model:GetAttribute("CenterX") or 0,
-		cz = model:GetAttribute("CenterZ") or 0,
-		radius = model:GetAttribute("Radius") or 20,
-		a = model:GetAttribute("A") or Vector3.zero,
-		b = model:GetAttribute("B") or Vector3.new(10, 0, 0),
-		speed = model:GetAttribute("Speed") or 4,
-		phase = model:GetAttribute("Phase") or 0,
-		baseY = model:GetAttribute("BaseY") or 0.5,
-		active = true,
-	})
-end
-
-local HIP = CFrame.new(0, 2, 0)
-local SHOULDER = CFrame.new(0, 3.9, 0)
-
-local function stepWalkers(t, camPos)
-	for _, w in ipairs(walkers) do
-		if w.model.Parent and w.active then
-			local pos, dir
-			if w.mode == "line" then
-				local delta = w.b - w.a
-				local len = delta.Magnitude
-				local s = (w.phase * 2 * len + t * math.abs(w.speed)) % (2 * len)
-				if s < len then
-					pos = w.a + delta * (s / len)
-					dir = delta.Unit
-				else
-					pos = w.b - delta * ((s - len) / len)
-					dir = -delta.Unit
-				end
-			else
-				local ang = w.phase * math.pi * 2 + t * w.speed / w.radius
-				pos = Vector3.new(w.cx + math.cos(ang) * w.radius, 0, w.cz + math.sin(ang) * w.radius)
-				dir = Vector3.new(-math.sin(ang), 0, math.cos(ang)) * (w.speed >= 0 and 1 or -1)
-			end
-			pos = Vector3.new(pos.X, w.baseY, pos.Z)
-			local pivot = CFrame.lookAt(pos, pos + dir)
-			local swing = math.sin(t * math.abs(w.speed) * 1.9 + w.phase * 10) * 0.55
-			for _, p in ipairs(w.parts) do
-				local cf
-				if p.limb == "legL" or p.limb == "legR" then
-					local a = p.limb == "legL" and swing or -swing
-					cf = pivot * HIP * CFrame.Angles(a, 0, 0) * HIP:Inverse() * p.rel
-				elseif p.limb == "armL" or p.limb == "armR" then
-					local a = p.limb == "armL" and -swing or swing
-					cf = pivot * SHOULDER * CFrame.Angles(a * 0.8, 0, 0) * SHOULDER:Inverse() * p.rel
-				else
-					cf = pivot * p.rel
-				end
-				p.part.CFrame = cf
+local function stepFlags(t, camPos)
+	local w = wind(t)
+	for _, f in ipairs(flags) do
+		if f.model.Parent and (f.hinge.Position - camPos).Magnitude < 220 then
+			-- La bandera apunta a favor del viento y la onda recorre la tela
+			local cf = f.hinge * CFrame.Angles(0, math.sin(t * 0.4 + f.seed) * 0.35 * w, 0) * CFrame.new(0.2, 0, 0)
+			for i, seg in ipairs(f.segs) do
+				local amp = 0.22 + 0.1 * i
+				local bend = math.sin(t * 4.2 * w - i * 0.9 + f.seed) * amp * w
+				local droop = (1 - w) * 0.05 * i
+				cf = cf * CFrame.Angles(0, bend, -droop)
+				seg.CFrame = cf * CFrame.new(f.width / 2, 0, 0)
+				cf = cf * CFrame.new(f.width, 0, 0)
 			end
 		end
 	end
-	local _ = camPos
 end
 
-local function updateWalkersActive(camPos)
-	for _, w in ipairs(walkers) do
-		local root = w.parts[1]
-		w.active = root ~= nil and (root.part.Position - camPos).Magnitude < 260
+------------------------------------------------------------------------------
+-- Nubes y semaforos
+------------------------------------------------------------------------------
+
+local function stepClouds(t)
+	for _, c in ipairs(clouds) do
+		if c.model.Parent then
+			local x = ((c.base.Position.X + t * c.speed + 700) % 1400) - 700
+			local bobY = math.sin(t * 0.1 + c.base.Position.Z) * 2
+			c.model:PivotTo(CFrame.new(x, c.base.Position.Y + bobY, c.base.Position.Z))
+		end
 	end
 end
 
 local function stepTrafficLights(t)
 	for _, tl in ipairs(trafficLights) do
 		if tl.model.Parent then
-			local cycle = (t / 12 + tl.phase) % 1
-			local state = cycle < 0.42 and "Green" or (cycle < 0.54 and "Yellow" or "Red")
+			local state = Traffic.lightState(tl.phase, t)
 			if state ~= tl.state then
 				tl.state = state
 				for _, name in ipairs({ "Red", "Yellow", "Green" }) do
@@ -5742,29 +5852,51 @@ local function stepTrafficLights(t)
 	end
 end
 
-local function stepClouds(t)
-	for _, c in ipairs(clouds) do
-		if c.model.Parent then
-			local x = ((c.base.Position.X + t * c.speed + 700) % 1400) - 700
-			c.model:PivotTo(CFrame.new(x, c.base.Position.Y, c.base.Position.Z))
+------------------------------------------------------------------------------
+-- Botones de compra: laten y flotan para llamar la atencion
+------------------------------------------------------------------------------
+
+local function registerPad(button)
+	if pads[button] then
+		return
+	end
+	local info = button:FindFirstChild("Info")
+	pads[button] = { button = button, info = info, seed = math.random() * 6 }
+end
+
+local function stepPads(t, camPos)
+	for button, p in pairs(pads) do
+		if not button.Parent then
+			pads[button] = nil
+		else
+			local pad = button.Parent
+			if pad:GetAttribute("Visible") and (button.Position - camPos).Magnitude < 120 then
+				local s = math.sin(t * 3 + p.seed)
+				button.Transparency = 0.12 + (s + 1) * 0.1
+				if p.info then
+					p.info.StudsOffsetWorldSpace = Vector3.new(0, 5.5 + s * 0.25, 0)
+				end
+			end
 		end
 	end
 end
 
 ------------------------------------------------------------------------------
--- Animacion de construccion
+-- Animacion de construccion: las piezas crecen desde el suelo con rebote
 ------------------------------------------------------------------------------
 
 local function isAnimated(inst, root)
 	local node = inst
 	while node and node ~= root do
-		if node:HasTag("TE_Spin") or node:HasTag("TE_Bob") or node:HasTag("TE_Slide") then
+		if node:HasTag("TE_Spin") or node:HasTag("TE_Bob") or node:HasTag("TE_Slide") or node:HasTag("TE_Sway") then
 			return true
 		end
 		node = node.Parent
 	end
 	return false
 end
+
+Animator.onBuild = nil -- function(position) (rafaga fisica de escombros)
 
 function Animator.playBuild(model)
 	local parts = {}
@@ -5780,39 +5912,43 @@ function Animator.playBuild(model)
 		return
 	end
 	local height = math.max(4, maxY - minY)
+	local center = model:GetPivot().Position
 	for _, p in ipairs(parts) do
-		local target = p.CFrame
-		local delayTime = ((p.Position.Y - minY) / height) * 0.6
-		p.CFrame = target * CFrame.new(0, -3, 0)
-		local origTrans = p.Transparency
+		local targetCF = p.CFrame
+		local targetSize = p.Size
+		-- Retraso segun altura y distancia al centro: la obra "sube" por plantas
+		local radial = Vector3.new(p.Position.X - center.X, 0, p.Position.Z - center.Z).Magnitude
+		local delayTime = ((p.Position.Y - minY) / height) * 0.7 + radial * 0.012
 		p.LocalTransparencyModifier = 1
+		p.Size = targetSize * 0.15
+		p.CFrame = targetCF * CFrame.new(0, -2.5, 0)
 		task.delay(delayTime, function()
 			if not p.Parent then
 				return
 			end
 			p.LocalTransparencyModifier = 0
-			local tween = TweenService:Create(p, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { CFrame = target })
-			tween:Play()
+			local info = TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+			TweenService:Create(p, info, { CFrame = targetCF, Size = targetSize }):Play()
 		end)
-		local _ = origTrans
 	end
-	-- Nube de polvo y destellos
-	local cf = model:GetPivot()
+	-- Nube de polvo y destellos en la base
 	local puff = Instance.new("Part")
 	puff.Anchored = true
 	puff.CanCollide = false
 	puff.CanQuery = false
+	puff.CanTouch = false
 	puff.Transparency = 1
 	puff.Size = Vector3.new(1, 1, 1)
-	puff.CFrame = cf
+	puff.CFrame = CFrame.new(center)
 	puff.Parent = workspace
 	local dust = Instance.new("ParticleEmitter")
 	dust.Texture = "rbxasset://textures/particles/smoke_main.dds"
 	dust.Color = ColorSequence.new(Color3.fromRGB(240, 225, 200))
-	dust.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 3), NumberSequenceKeypoint.new(1, 8) })
+	dust.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 3), NumberSequenceKeypoint.new(1, 9) })
 	dust.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(1, 1) })
-	dust.Lifetime = NumberRange.new(1, 1.6)
-	dust.Speed = NumberRange.new(8, 14)
+	dust.Lifetime = NumberRange.new(1, 1.8)
+	dust.Speed = NumberRange.new(10, 18)
+	dust.Drag = 3
 	dust.SpreadAngle = Vector2.new(180, 10)
 	dust.Parent = puff
 	local stars = Instance.new("ParticleEmitter")
@@ -5820,23 +5956,31 @@ function Animator.playBuild(model)
 	stars.Color = ColorSequence.new(Color3.fromRGB(255, 230, 120))
 	stars.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1.4), NumberSequenceKeypoint.new(1, 0) })
 	stars.Lifetime = NumberRange.new(1, 1.8)
-	stars.Speed = NumberRange.new(10, 20)
+	stars.Speed = NumberRange.new(12, 22)
+	stars.Acceleration = Vector3.new(0, -20, 0)
 	stars.SpreadAngle = Vector2.new(60, 60)
 	stars.EmissionDirection = Enum.NormalId.Top
 	stars.LightEmission = 1
 	stars.Parent = puff
 	dust:Emit(30)
 	stars:Emit(40)
+	task.delay(0.7 + 0.3, function()
+		stars:Emit(25) -- segundo destello al terminar
+	end)
 	task.delay(3, function()
 		puff:Destroy()
 	end)
+	if Animator.onBuild then
+		Animator.onBuild(center)
+	end
 end
 
 ------------------------------------------------------------------------------
--- "+$" flotantes sobre los negocios
+-- "+$" flotantes: saltan con trayectoria parabolica y se desvanecen
 ------------------------------------------------------------------------------
 
 local POPUP_INTERVAL = 3
+local GRAVITY = 22
 
 local function popup(model, amount)
 	local cf = model:GetPivot()
@@ -5848,10 +5992,11 @@ local function popup(model, amount)
 	anchor.CanTouch = false
 	anchor.Transparency = 1
 	anchor.Size = Vector3.new(0.2, 0.2, 0.2)
-	anchor.CFrame = CFrame.new(cf.Position + Vector3.new(math.random(-3, 3), size.Y + 1, math.random(-3, 3)))
+	local start = cf.Position + Vector3.new(math.random(-3, 3), size.Y * 0.8 + 1, math.random(-3, 3))
+	anchor.CFrame = CFrame.new(start)
 	anchor.Parent = workspace
 	local bb = Instance.new("BillboardGui")
-	bb.Size = UDim2.fromOffset(140, 44)
+	bb.Size = UDim2.fromOffset(40, 14)
 	bb.AlwaysOnTop = false
 	bb.MaxDistance = 140
 	bb.LightInfluence = 0
@@ -5868,12 +6013,38 @@ local function popup(model, amount)
 	stroke.Thickness = 2.5
 	stroke.Color = Color3.fromRGB(20, 70, 30)
 	stroke.Parent = label
-	TweenService:Create(anchor, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CFrame = anchor.CFrame + Vector3.new(0, 6, 0) }):Play()
-	TweenService:Create(label, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { TextTransparency = 1 }):Play()
-	TweenService:Create(stroke, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Transparency = 1 }):Play()
-	task.delay(1.7, function()
-		anchor:Destroy()
-	end)
+	-- Aparece con rebote (escala) y luego cae en parabola
+	TweenService:Create(bb, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(140, 44) }):Play()
+	local a = math.random() * math.pi * 2
+	table.insert(popups, {
+		anchor = anchor,
+		label = label,
+		stroke = stroke,
+		pos = start,
+		vel = Vector3.new(math.cos(a) * 2.5, 13, math.sin(a) * 2.5),
+		age = 0,
+		life = 1.6,
+	})
+end
+
+local function stepPopups(dt)
+	for i = #popups, 1, -1 do
+		local p = popups[i]
+		p.age += dt
+		if p.age >= p.life or not p.anchor.Parent then
+			if p.anchor.Parent then
+				p.anchor:Destroy()
+			end
+			table.remove(popups, i)
+		else
+			p.vel += Vector3.new(0, -GRAVITY * dt, 0)
+			p.pos += p.vel * dt
+			p.anchor.CFrame = CFrame.new(p.pos)
+			local fade = math.clamp((p.age - p.life * 0.55) / (p.life * 0.45), 0, 1)
+			p.label.TextTransparency = fade
+			p.stroke.Transparency = fade
+		end
+	end
 end
 
 local function popupLoop(plotsFolder)
@@ -5912,11 +6083,8 @@ function Animator.start(map)
 		CollectionService:GetInstanceAddedSignal(tag):Connect(register)
 		CollectionService:GetInstanceRemovedSignal(tag):Connect(unregister)
 	end
-	for _, car in ipairs(CollectionService:GetTagged("TE_Car")) do
-		registerCar(car)
-	end
-	for _, w in ipairs(CollectionService:GetTagged("TE_Walker")) do
-		registerWalker(w)
+	for _, f in ipairs(CollectionService:GetTagged("TE_Flag")) do
+		registerFlag(f)
 	end
 	for _, tl in ipairs(CollectionService:GetTagged("TE_TrafficLight")) do
 		table.insert(trafficLights, { model = tl, phase = tl:GetAttribute("Phase") or 0, state = nil })
@@ -5924,11 +6092,20 @@ function Animator.start(map)
 	for _, c in ipairs(CollectionService:GetTagged("TE_Cloud")) do
 		table.insert(clouds, { model = c, base = c:GetPivot(), speed = c:GetAttribute("Speed") or 3 })
 	end
+	Traffic.start()
+	Pedestrians.start()
 
-	-- Construccion animada de edificios nuevos (en cualquier parcela)
 	local plotsFolder = map:WaitForChild("Plots")
 	local function watchPlot(plot)
 		local buildings = plot:WaitForChild("Buildings", 10)
+		local padFolder = plot:WaitForChild("Pads", 10)
+		if padFolder then
+			for _, d in ipairs(padFolder:GetDescendants()) do
+				if d.Name == "Button" and d:IsA("BasePart") then
+					registerPad(d)
+				end
+			end
+		end
 		if not buildings then
 			return
 		end
@@ -5953,17 +6130,23 @@ function Animator.start(map)
 		local camPos = cam and cam.CFrame.Position or Vector3.zero
 		if acc > 0.5 then
 			acc = 0
-			updateActive()
-			updateWalkersActive(camPos)
-			stepTrafficLights(t)
+			updateActive(camPos)
 		end
-		step(t)
-		stepCars(t)
-		stepWalkers(t, camPos)
+		step(t, dt)
+		stepFlags(t, camPos)
 		stepClouds(t)
+		stepTrafficLights(t)
+		stepPads(t, camPos)
+		stepPopups(dt)
+		Traffic.step(dt, t, camPos)
+		Pedestrians.step(dt, t, camPos)
 	end)
 	task.spawn(popupLoop, plotsFolder)
 end
+
+Animator._entries = entries
+Animator._flags = flags
+Animator._popups = popups
 
 return Animator
 ]]></string>
@@ -6120,6 +6303,7 @@ local Hud = require(script.Parent.UI.Hud)
 local Panels = require(script.Parent.UI.Panels)
 local Effects = require(script.Parent.Effects)
 local Animator = require(script.Parent.Animator)
+local Physics = require(script.Parent.Physics)
 local Tutorial = require(script.Parent.Tutorial)
 
 local player = Players.LocalPlayer
@@ -6210,7 +6394,11 @@ Panels.init(Hud.gui(), {
 })
 
 Effects.init(Hud.gui())
+Animator.onBuild = function(position)
+	Physics.debrisBurst(position, 12)
+end
 Animator.start(map)
+Physics.start(Hud.gui())
 Tutorial.init(map)
 
 ------------------------------------------------------------------------------
@@ -6241,10 +6429,21 @@ remotes.Effect.OnClientEvent:Connect(function(payload)
 		Effects.confetti(70)
 	elseif kind == "cash" then
 		Effects.cashBurst(payload.amount, Hud.cashPanel())
+		if payload.position then
+			Physics.coinBurst(payload.position, 14)
+		end
 	elseif kind == "build" then
 		Effects.flash(Theme.C.green)
+		if payload.position then
+			Physics.coinBurst(payload.position, 10)
+		end
+	elseif kind == "rain" then
+		Effects.flash(Theme.C.gold)
 	elseif kind == "levelup" then
 		Effects.flash(Theme.C.blue)
+		if payload.position then
+			Physics.coinBurst(payload.position, 8)
+		end
 		if payload.level == Config.MaxBusinessLevel then
 			Effects.confetti(40)
 		end
@@ -6264,6 +6463,267 @@ fire("requestState")
           </Properties>
         </Item>
         <Item class="ModuleScript" referent="35">
+          <Properties>
+            <string name="Name">Physics</string>
+            <string name="Source"><![CDATA[--!nonstrict
+-- Fisica del lado del cliente (el personaje local es propiedad del cliente):
+--  * Trampolines: impulso vertical + lona con muelle amortiguado
+--  * Sprint (Shift o boton tactil) con aceleracion suave y cambio de FOV
+--  * Rafagas de monedas y escombros: piezas fisicas que rebotan y se desvanecen
+--    (grupo de colision TE_Effects: chocan con el suelo pero no con jugadores)
+
+local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local Theme = require(script.Parent.UI.Theme)
+
+local Physics = {}
+
+local player = Players.LocalPlayer
+local springs = {} -- lonas de trampolin con muelle
+local effects = {} -- piezas fisicas temporales
+local MAX_EFFECTS = 90
+
+Physics.WALK_SPEED = 16
+Physics.SPRINT_SPEED = 26
+Physics.BASE_FOV = 70
+Physics.SPRINT_FOV = 80
+
+------------------------------------------------------------------------------
+-- Trampolines
+------------------------------------------------------------------------------
+
+local function setupTrampoline(mat)
+	if springs[mat] then
+		return
+	end
+	local spring = { part = mat, base = mat.CFrame, x = 0, v = 0, debounce = 0 }
+	springs[mat] = spring
+	mat.Touched:Connect(function(hit)
+		local character = player.Character
+		if not character or not hit:IsDescendantOf(character) then
+			return
+		end
+		local root = character:FindFirstChild("HumanoidRootPart")
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if not root or not humanoid or humanoid.Health <= 0 then
+			return
+		end
+		local now = os.clock()
+		if now - spring.debounce < 0.35 then
+			return
+		end
+		spring.debounce = now
+		local power = mat:GetAttribute("Power") or 110
+		local vel = root.AssemblyLinearVelocity
+		-- Conserva el impulso horizontal y suma un poco si se llega corriendo
+		root.AssemblyLinearVelocity = Vector3.new(vel.X * 1.1, power, vel.Z * 1.1)
+		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+		spring.v -= 22 -- la lona se hunde
+		Theme.play("coin")
+	end)
+end
+
+local function stepSprings(dt)
+	for mat, s in pairs(springs) do
+		if mat.Parent then
+			-- Oscilador amortiguado: x'' = -k x - c x'
+			local k, c = 220, 9
+			local acc = -k * s.x - c * s.v
+			s.v += acc * dt
+			s.x += s.v * dt
+			if math.abs(s.x) > 0.001 or math.abs(s.v) > 0.01 then
+				mat.CFrame = s.base * CFrame.new(math.clamp(s.x, -1.2, 0.6), 0, 0) -- eje X del cilindro = vertical
+			end
+		else
+			springs[mat] = nil
+		end
+	end
+end
+
+------------------------------------------------------------------------------
+-- Sprint
+------------------------------------------------------------------------------
+
+local sprinting = false
+local currentSpeed = Physics.WALK_SPEED
+
+function Physics.setSprint(on)
+	sprinting = on
+	local cam = workspace.CurrentCamera
+	if cam then
+		TweenService:Create(cam, TweenInfo.new(0.35, Enum.EasingStyle.Quad), { FieldOfView = on and Physics.SPRINT_FOV or Physics.BASE_FOV }):Play()
+	end
+end
+
+function Physics.isSprinting()
+	return sprinting
+end
+
+local function stepSprint(dt)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
+		return
+	end
+	local target = sprinting and Physics.SPRINT_SPEED or Physics.WALK_SPEED
+	-- Aceleracion progresiva en lugar de un salto brusco de velocidad
+	currentSpeed += (target - currentSpeed) * math.min(1, dt * 4)
+	if math.abs(humanoid.WalkSpeed - currentSpeed) > 0.05 then
+		humanoid.WalkSpeed = currentSpeed
+	end
+end
+
+------------------------------------------------------------------------------
+-- Rafagas de piezas fisicas
+------------------------------------------------------------------------------
+
+local function spawnEffect(cf, size, color, material, velocity, angular, lifetime, shape)
+	if #effects >= MAX_EFFECTS then
+		local old = table.remove(effects, 1)
+		if old.part.Parent then
+			old.part:Destroy()
+		end
+	end
+	local p = Instance.new("Part")
+	p.Name = "TE_Effect"
+	p.Size = size
+	p.CFrame = cf
+	p.Color = color
+	p.Material = material
+	if shape then
+		p.Shape = shape
+	end
+	p.Anchored = false
+	p.CanCollide = true
+	p.CanQuery = false
+	p.CanTouch = false
+	p.CastShadow = false
+	p.CollisionGroup = "TE_Effects"
+	p.CustomPhysicalProperties = PhysicalProperties.new(0.4, 0.4, 0.5, 1, 1)
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	p.Parent = workspace
+	p.AssemblyLinearVelocity = velocity
+	p.AssemblyAngularVelocity = angular
+	table.insert(effects, { part = p, born = os.clock(), life = lifetime })
+	return p
+end
+
+local rng = Random.new()
+
+-- Monedas que saltan y rebotan
+function Physics.coinBurst(position, count)
+	count = count or 12
+	for i = 1, count do
+		local a = (i / count) * math.pi * 2 + rng:NextNumber(-0.3, 0.3)
+		local out = rng:NextNumber(6, 14)
+		local vel = Vector3.new(math.cos(a) * out, rng:NextNumber(26, 40), math.sin(a) * out)
+		local cf = CFrame.new(position + Vector3.new(0, 2.5, 0)) * CFrame.Angles(0, a, math.rad(90))
+		spawnEffect(cf, Vector3.new(0.25, 1.3, 1.3), Color3.fromRGB(255, 205, 60), Enum.Material.Foil, vel, Vector3.new(rng:NextNumber(-12, 12), rng:NextNumber(-12, 12), rng:NextNumber(-12, 12)), rng:NextNumber(1.6, 2.4), Enum.PartType.Cylinder)
+	end
+end
+
+-- Escombros de obra al construir/mejorar (ladrillos y tablas)
+local DEBRIS_COLORS = {
+	Color3.fromRGB(190, 110, 80),
+	Color3.fromRGB(170, 130, 90),
+	Color3.fromRGB(220, 220, 225),
+	Color3.fromRGB(255, 200, 60),
+}
+function Physics.debrisBurst(position, count)
+	count = count or 14
+	for _ = 1, count do
+		local a = rng:NextNumber(0, math.pi * 2)
+		local out = rng:NextNumber(5, 16)
+		local size = Vector3.new(rng:NextNumber(0.5, 1.4), rng:NextNumber(0.4, 0.8), rng:NextNumber(0.5, 1.6))
+		local vel = Vector3.new(math.cos(a) * out, rng:NextNumber(18, 34), math.sin(a) * out)
+		local cf = CFrame.new(position + Vector3.new(math.cos(a) * 3, 1.5, math.sin(a) * 3)) * CFrame.Angles(rng:NextNumber(0, 6), rng:NextNumber(0, 6), 0)
+		local material = rng:NextNumber() < 0.5 and Enum.Material.Brick or Enum.Material.Wood
+		spawnEffect(cf, size, DEBRIS_COLORS[rng:NextInteger(1, #DEBRIS_COLORS)], material, vel, Vector3.new(rng:NextNumber(-8, 8), rng:NextNumber(-8, 8), rng:NextNumber(-8, 8)), rng:NextNumber(1.8, 2.6))
+	end
+end
+
+local function stepEffects()
+	local now = os.clock()
+	for i = #effects, 1, -1 do
+		local e = effects[i]
+		local age = now - e.born
+		if not e.part.Parent then
+			table.remove(effects, i)
+		elseif age > e.life then
+			e.part:Destroy()
+			table.remove(effects, i)
+		elseif age > e.life - 0.5 then
+			-- desvanecer y encoger al final
+			local k = (e.life - age) / 0.5
+			e.part.LocalTransparencyModifier = 1 - k
+		end
+	end
+end
+
+------------------------------------------------------------------------------
+
+function Physics.start(hud)
+	for _, mat in ipairs(CollectionService:GetTagged("TE_Trampoline")) do
+		setupTrampoline(mat)
+	end
+	CollectionService:GetInstanceAddedSignal("TE_Trampoline"):Connect(setupTrampoline)
+
+	UserInputService.InputBegan:Connect(function(input, processed)
+		if processed then
+			return
+		end
+		if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
+			Physics.setSprint(true)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.RightShift then
+			Physics.setSprint(false)
+		end
+	end)
+	-- Boton de sprint para moviles
+	if UserInputService.TouchEnabled and hud then
+		local btn = Theme.button({
+			Name = "SprintButton",
+			Text = "🏃",
+			Size = UDim2.fromOffset(74, 74),
+			AnchorPoint = Vector2.new(1, 1),
+			Position = UDim2.new(1, -150, 1, -150),
+			Color = Theme.C.purple,
+			Radius = 37,
+			MaxText = 36,
+			Parent = hud,
+			OnClick = function()
+				Physics.setSprint(not sprinting)
+			end,
+		})
+		local _ = btn
+	end
+	player.CharacterAdded:Connect(function()
+		currentSpeed = Physics.WALK_SPEED
+	end)
+
+	RunService.Heartbeat:Connect(function(dt)
+		dt = math.min(dt, 0.1)
+		stepSprings(dt)
+		stepSprint(dt)
+		stepEffects()
+	end)
+end
+
+Physics._effects = effects
+Physics._springs = springs
+
+return Physics
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="36">
           <Properties>
             <string name="Name">Store</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -6303,7 +6763,7 @@ return Store
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="36">
+        <Item class="ModuleScript" referent="37">
           <Properties>
             <string name="Name">Tutorial</string>
             <string name="Source"><![CDATA[--!nonstrict
@@ -6484,11 +6944,11 @@ return Tutorial
 ]]></string>
           </Properties>
         </Item>
-        <Item class="Folder" referent="37">
+        <Item class="Folder" referent="38">
           <Properties>
             <string name="Name">UI</string>
           </Properties>
-          <Item class="ModuleScript" referent="38">
+          <Item class="ModuleScript" referent="39">
             <Properties>
               <string name="Name">Hud</string>
               <string name="Source"><![CDATA[--!nonstrict
@@ -6947,7 +7407,7 @@ return Hud
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="39">
+          <Item class="ModuleScript" referent="40">
             <Properties>
               <string name="Name">Panels</string>
               <string name="Source"><![CDATA[--!nonstrict
@@ -7636,7 +8096,7 @@ return Panels
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="40">
+          <Item class="ModuleScript" referent="41">
             <Properties>
               <string name="Name">Theme</string>
               <string name="Source"><![CDATA[--!nonstrict
@@ -7912,10 +8372,600 @@ return Theme
             </Properties>
           </Item>
         </Item>
+        <Item class="Folder" referent="42">
+          <Properties>
+            <string name="Name">World</string>
+          </Properties>
+          <Item class="ModuleScript" referent="43">
+            <Properties>
+              <string name="Name">Pedestrians</string>
+              <string name="Source"><![CDATA[--!nonstrict
+-- Peatones con comportamiento natural:
+--  * aceleran y frenan suavemente, giran poco a poco
+--  * al final de cada acera se detienen, miran alrededor y dan la vuelta
+--  * de vez en cuando paran a mirar la fuente
+--  * esquivan / esperan si un jugador se cruza delante
+--  * paso con balanceo de brazos y piernas y rebote del cuerpo proporcional a la velocidad
+
+local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
+
+local Pedestrians = {}
+
+local walkers = {}
+local HIP = CFrame.new(0, 2, 0)
+local SHOULDER = CFrame.new(0, 3.9, 0)
+local ACCEL = 5
+local TURN_RATE = 5
+local ACTIVE_RANGE = 260
+
+local function yawOf(dir)
+	return math.atan2(-dir.X, -dir.Z)
+end
+
+local function lerpAngle(a, b, alpha)
+	local d = (b - a + math.pi) % (2 * math.pi) - math.pi
+	return a + d * alpha
+end
+
+local function register(model)
+	local pivot = model:GetPivot()
+	local parts = {}
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			local rel = pivot:ToObjectSpace(d.CFrame)
+			local limb = nil
+			if d.Name == "LegL" or (d.Name == "Shoe" and rel.Position.X < 0) then
+				limb = "legL"
+			elseif d.Name == "LegR" or (d.Name == "Shoe" and rel.Position.X > 0) then
+				limb = "legR"
+			elseif d.Name == "ArmL" then
+				limb = "armL"
+			elseif d.Name == "ArmR" then
+				limb = "armR"
+			elseif d.Name == "Head" or d.Name == "Hair" or d.Name == "Cap" or d.Name == "Visor" or d.Name:sub(1, 3) == "Eye" then
+				limb = "head"
+			end
+			table.insert(parts, { part = d, rel = rel, limb = limb })
+		end
+	end
+	local phase = model:GetAttribute("Phase") or 0
+	local w = {
+		model = model,
+		parts = parts,
+		mode = model:GetAttribute("WalkMode") or "circle",
+		cx = model:GetAttribute("CenterX") or 0,
+		cz = model:GetAttribute("CenterZ") or 0,
+		radius = model:GetAttribute("Radius") or 20,
+		a = model:GetAttribute("A") or Vector3.zero,
+		b = model:GetAttribute("B") or Vector3.new(10, 0, 0),
+		cruise = math.abs(model:GetAttribute("Speed") or 4),
+		sign = (model:GetAttribute("Speed") or 1) >= 0 and 1 or -1,
+		baseY = model:GetAttribute("BaseY") or 0.5,
+		v = 0,
+		step = phase * 10,
+		state = "walk",
+		timer = 0,
+		nextIdle = 8 + phase * 20,
+		lookYaw = 0,
+		active = true,
+		seed = phase * 100,
+	}
+	if w.mode == "line" then
+		local len = (w.b - w.a).Magnitude
+		local u = (phase * 2 * len) % (2 * len)
+		w.leg = u < len and 1 or -1
+		w.u = u < len and u or u - len
+		w.len = len
+	else
+		w.angle = phase * math.pi * 2
+	end
+	local _, dir = Pedestrians._pose(w)
+	w.yaw = yawOf(dir)
+	table.insert(walkers, w)
+end
+
+-- Posicion y direccion de marcha actuales
+function Pedestrians._pose(w)
+	if w.mode == "line" then
+		local delta = (w.b - w.a)
+		local unit = delta.Unit
+		if w.leg > 0 then
+			return w.a + unit * w.u, unit
+		end
+		return w.b - unit * w.u, -unit
+	end
+	local pos = Vector3.new(w.cx + math.cos(w.angle) * w.radius, 0, w.cz + math.sin(w.angle) * w.radius)
+	local dir = Vector3.new(-math.sin(w.angle), 0, math.cos(w.angle)) * w.sign
+	return pos, dir
+end
+
+local function blocked(pos, dir)
+	for _, player in ipairs(Players:GetPlayers()) do
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if root then
+			local rel = Vector3.new(root.Position.X - pos.X, 0, root.Position.Z - pos.Z)
+			local forward = rel:Dot(dir)
+			if forward > 0 and forward < 5 and (rel - dir * forward).Magnitude < 2.5 then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+local function stepWalker(w, dt, t)
+	local pos, dir = Pedestrians._pose(w)
+	local targetSpeed = w.cruise
+	local targetYaw = yawOf(dir)
+
+	if w.state == "turn" then
+		-- Fin de la acera: se para, mira a un lado y da media vuelta
+		w.timer -= dt
+		targetSpeed = 0
+		local progress = 1 - math.max(0, w.timer) / 1.6
+		targetYaw = yawOf(dir) + math.sin(progress * math.pi) * 0.6 + (progress > 0.5 and math.pi or 0)
+		if w.timer <= 0 then
+			w.leg = -w.leg
+			w.u = 0
+			w.state = "walk"
+			pos, dir = Pedestrians._pose(w)
+			targetYaw = yawOf(dir)
+		end
+	elseif w.state == "idle" then
+		-- Parada para mirar la fuente / el escaparate
+		w.timer -= dt
+		targetSpeed = 0
+		local toCenter = Vector3.new(w.cx - pos.X, 0, w.cz - pos.Z)
+		if w.mode == "circle" and toCenter.Magnitude > 0.1 then
+			targetYaw = yawOf(toCenter.Unit)
+		end
+		w.lookYaw = math.sin(t * 1.3 + w.seed) * 0.5
+		if w.timer <= 0 then
+			w.state = "walk"
+			w.nextIdle = 14 + (w.seed * 7.3) % 18
+		end
+	else
+		w.lookYaw *= 1 - math.min(1, dt * 3)
+		w.nextIdle -= dt
+		if w.nextIdle <= 0 then
+			w.state = "idle"
+			w.timer = 2.2 + (w.seed % 1.5)
+		end
+		if blocked(pos, dir) then
+			targetSpeed = 0
+		end
+	end
+
+	-- Velocidad con aceleracion suave
+	local dv = targetSpeed - w.v
+	w.v = math.max(0, w.v + math.clamp(dv, -ACCEL * 1.6 * dt, ACCEL * dt))
+	if w.mode == "line" then
+		w.u += w.v * dt
+		if w.u >= w.len and w.state == "walk" then
+			w.u = w.len
+			w.state = "turn"
+			w.timer = 1.6
+		end
+		w.u = math.min(w.u, w.len)
+	else
+		w.angle += w.sign * w.v * dt / w.radius
+	end
+	pos = Pedestrians._pose(w)
+
+	-- Giro suave
+	w.yaw = lerpAngle(w.yaw, targetYaw, math.min(1, dt * TURN_RATE))
+
+	-- Paso: frecuencia proporcional a la velocidad
+	local speedFactor = math.clamp(w.v / math.max(w.cruise, 0.1), 0, 1)
+	w.step += w.v * dt * 1.9
+	local swing = math.sin(w.step) * 0.6 * speedFactor
+	local bounce = math.abs(math.sin(w.step)) * 0.16 * speedFactor
+	local breathe = math.sin(t * 2 + w.seed) * 0.03 * (1 - speedFactor)
+	local pivot = CFrame.new(pos.X, w.baseY + bounce, pos.Z) * CFrame.Angles(0, w.yaw, 0)
+	-- Ligera inclinacion hacia delante al andar
+	pivot *= CFrame.Angles(-0.06 * speedFactor, 0, 0)
+	local idleArm = (1 - speedFactor) * 0.08
+
+	for _, p in ipairs(w.parts) do
+		local cf
+		if p.limb == "legL" or p.limb == "legR" then
+			local a = p.limb == "legL" and swing or -swing
+			cf = pivot * HIP * CFrame.Angles(a, 0, 0) * HIP:Inverse() * p.rel
+		elseif p.limb == "armL" or p.limb == "armR" then
+			local a = (p.limb == "armL" and -swing or swing) * 0.85
+			local side = p.limb == "armL" and idleArm or -idleArm
+			cf = pivot * SHOULDER * CFrame.Angles(a, 0, side) * SHOULDER:Inverse() * p.rel
+		elseif p.limb == "head" then
+			cf = pivot * CFrame.new(0, 4.65 + breathe, 0) * CFrame.Angles(0, w.lookYaw, 0) * CFrame.new(0, -4.65, 0) * p.rel
+		else
+			cf = pivot * CFrame.new(0, breathe, 0) * p.rel
+		end
+		p.part.CFrame = cf
+	end
+end
+
+function Pedestrians.start()
+	for _, m in ipairs(CollectionService:GetTagged("TE_Walker")) do
+		register(m)
+	end
+end
+
+function Pedestrians.step(dt, t, camPos)
+	dt = math.min(dt, 0.1)
+	for _, w in ipairs(walkers) do
+		if w.model.Parent then
+			local pos = Pedestrians._pose(w)
+			if (pos - camPos).Magnitude < ACTIVE_RANGE then
+				stepWalker(w, dt, t)
+			end
+		end
+	end
+end
+
+Pedestrians._walkers = walkers
+
+return Pedestrians
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="44">
+            <Properties>
+              <string name="Name">Traffic</string>
+              <string name="Source"><![CDATA[--!nonstrict
+-- Trafico del anillo exterior con un modelo de conduccion sencillo:
+--  * recorrido con curvas redondeadas (sin giros bruscos de 90 grados)
+--  * aceleracion y frenado realistas (curva de frenado v = sqrt(2·a·d))
+--  * distancia de seguridad con el coche de delante
+--  * se detienen en los semaforos en rojo y ante jugadores en la calzada
+--  * ruedas que giran, cabeceo al frenar, balanceo en las curvas y luces de freno
+
+local CollectionService = game:GetService("CollectionService")
+local Players = game:GetService("Players")
+
+local Traffic = {}
+
+local CORNER_RADIUS = 16
+local LANE_OFFSET = 5
+local ACCEL = 9
+local BRAKE = 20
+local CURVE_SPEED = 13
+local SAFE_GAP = 11
+local STOP_BEFORE = 17 -- distancia del centro del cruce a la linea de detencion
+local ACTIVE_RANGE = 400
+
+local cars = {}
+local path = nil
+local intersections = {}
+
+------------------------------------------------------------------------------
+-- Recorrido: rectangulo de esquinas redondeadas (parametro s = distancia)
+------------------------------------------------------------------------------
+
+local function buildPath(rx, rz)
+	local rc = CORNER_RADIUS
+	local lx = 2 * rx - 2 * rc
+	local lz = 2 * rz - 2 * rc
+	local arc = math.pi * rc / 2
+	local segs = {
+		{ kind = "line", from = Vector3.new(-rx + rc, 0, -rz), dir = Vector3.new(1, 0, 0), len = lx },
+		{ kind = "arc", center = Vector3.new(rx - rc, 0, -rz + rc), a0 = -math.pi / 2, len = arc },
+		{ kind = "line", from = Vector3.new(rx, 0, -rz + rc), dir = Vector3.new(0, 0, 1), len = lz },
+		{ kind = "arc", center = Vector3.new(rx - rc, 0, rz - rc), a0 = 0, len = arc },
+		{ kind = "line", from = Vector3.new(rx - rc, 0, rz), dir = Vector3.new(-1, 0, 0), len = lx },
+		{ kind = "arc", center = Vector3.new(-rx + rc, 0, rz - rc), a0 = math.pi / 2, len = arc },
+		{ kind = "line", from = Vector3.new(-rx, 0, rz - rc), dir = Vector3.new(0, 0, -1), len = lz },
+		{ kind = "arc", center = Vector3.new(-rx + rc, 0, -rz + rc), a0 = math.pi, len = arc },
+	}
+	local total = 0
+	for _, seg in ipairs(segs) do
+		seg.start = total
+		total += seg.len
+	end
+	return { segs = segs, length = total, rc = rc }
+end
+
+-- Devuelve posicion, direccion y si es curva para la distancia s
+local function sample(s)
+	s %= path.length
+	for _, seg in ipairs(path.segs) do
+		if s < seg.start + seg.len then
+			local u = s - seg.start
+			if seg.kind == "line" then
+				return seg.from + seg.dir * u, seg.dir, false
+			end
+			local a = seg.a0 + u / path.rc
+			local pos = seg.center + Vector3.new(math.cos(a), 0, math.sin(a)) * path.rc
+			return pos, Vector3.new(-math.sin(a), 0, math.cos(a)), true
+		end
+	end
+	return path.segs[1].from, path.segs[1].dir, false
+end
+
+-- Distancia (en sentido de la marcha) hasta la proxima curva
+local function distToCurve(s, lane)
+	local best = math.huge
+	for _, seg in ipairs(path.segs) do
+		if seg.kind == "arc" then
+			local entry = lane > 0 and seg.start or (seg.start + seg.len)
+			local d
+			if lane > 0 then
+				d = (entry - s) % path.length
+			else
+				d = (s - entry) % path.length
+			end
+			best = math.min(best, d)
+		end
+	end
+	return best
+end
+
+local function closestS(point)
+	local best, bestS = math.huge, 0
+	for s = 0, path.length, 1 do
+		local p = sample(s)
+		local d = (p - point).Magnitude
+		if d < best then
+			best, bestS = d, s
+		end
+	end
+	return bestS
+end
+
+------------------------------------------------------------------------------
+-- Semaforos
+------------------------------------------------------------------------------
+
+local function lightState(phase, t)
+	local cycle = (t / 12 + phase) % 1
+	if cycle < 0.42 then
+		return "Green"
+	elseif cycle < 0.54 then
+		return "Yellow"
+	end
+	return "Red"
+end
+Traffic.lightState = lightState
+
+local function setupIntersections()
+	local byCenter = {}
+	for _, light in ipairs(CollectionService:GetTagged("TE_TrafficLight")) do
+		if light:GetAttribute("Road") == "ring" then
+			local key = string.format("%d,%d", light:GetAttribute("CenterX") or 0, light:GetAttribute("CenterZ") or 0)
+			if not byCenter[key] then
+				local center = Vector3.new(light:GetAttribute("CenterX") or 0, 0, light:GetAttribute("CenterZ") or 0)
+				byCenter[key] = true
+				table.insert(intersections, { s = closestS(center), phase = light:GetAttribute("Phase") or 0 })
+			end
+		end
+	end
+end
+
+------------------------------------------------------------------------------
+-- Coches
+------------------------------------------------------------------------------
+
+local function register(model)
+	local pivot = model:GetPivot()
+	local parts = {}
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			table.insert(parts, {
+				part = d,
+				rel = pivot:ToObjectSpace(d.CFrame),
+				wheel = d.Name == "Wheel",
+				tail = d.Name == "Taillight",
+			})
+		end
+	end
+	local folder = model.Parent
+	if not path then
+		path = buildPath(folder:GetAttribute("RingX") or 330, folder:GetAttribute("RingZ") or 185)
+	end
+	local lane = model:GetAttribute("Lane") or 1
+	table.insert(cars, {
+		model = model,
+		parts = parts,
+		lane = lane,
+		cruise = model:GetAttribute("Speed") or 25,
+		s = ((model:GetAttribute("Phase") or 0) * path.length) % path.length,
+		v = 0,
+		accel = 0,
+		wheelAngle = 0,
+		roll = 0,
+		pitch = 0,
+		braking = false,
+		active = true,
+	})
+end
+
+-- Distancia hacia delante (sentido de la marcha) de a hasta b
+local function ahead(car, sOther)
+	if car.lane > 0 then
+		return (sOther - car.s) % path.length
+	end
+	return (car.s - sOther) % path.length
+end
+
+local function playerBlocking(car, pos, dir)
+	local best = math.huge
+	for _, player in ipairs(Players:GetPlayers()) do
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		if root then
+			local rel = root.Position - pos
+			local forward = rel:Dot(dir)
+			local lateral = (rel - dir * forward).Magnitude
+			if forward > 0 and forward < 45 and lateral < 4.5 and math.abs(rel.Y) < 8 then
+				best = math.min(best, forward)
+			end
+		end
+	end
+	return best
+end
+
+local function stepCar(car, dt, t, render)
+	-- Velocidad deseada: crucero, limitada por curvas, coche delantero, semaforos y jugadores
+	local desired = car.cruise
+	-- Curva de frenado v = sqrt(2·a·d); por defecto con deceleracion comoda
+	local function limitToStopAt(distance, decel)
+		local v = math.sqrt(2 * (decel or BRAKE * 0.6) * math.max(0, distance))
+		if v < desired then
+			desired = v
+		end
+	end
+	local dCurve = distToCurve(car.s, car.lane)
+	local _, dir0, inCurve = sample(car.s)
+	if inCurve then
+		desired = math.min(desired, CURVE_SPEED)
+	else
+		desired = math.min(desired, math.sqrt(CURVE_SPEED * CURVE_SPEED + 2 * BRAKE * 0.6 * dCurve))
+	end
+	-- Coche de delante en el mismo carril
+	local gap = math.huge
+	for _, other in ipairs(cars) do
+		if other ~= car and other.lane == car.lane then
+			local g = ahead(car, other.s)
+			if g > 0 and g < gap then
+				gap = g
+			end
+		end
+	end
+	if gap < 80 then
+		limitToStopAt(gap - SAFE_GAP, BRAKE * 0.8)
+	end
+	-- Semaforos del anillo. Si al ponerse en ambar/rojo el coche ya no puede detenerse
+	-- con comodidad, se "compromete" y cruza (como un conductor real).
+	for _, inter in ipairs(intersections) do
+		local d = ahead(car, inter.s)
+		local distToLine = d - STOP_BEFORE
+		if distToLine < -6 or distToLine >= 60 then
+			-- ya cruzado (o aun lejos): se olvida la decision tomada
+			if car.committed == inter then
+				car.committed = nil
+			end
+			if car.stopping == inter then
+				car.stopping = nil
+			end
+		else
+			local state = lightState(inter.phase, t)
+			if state == "Green" then
+				if car.stopping == inter then
+					car.stopping = nil
+				end
+			elseif car.committed ~= inter then
+				-- La decision (parar o cruzar) se toma una vez y se mantiene
+				if car.stopping ~= inter then
+					local canStop = car.v * car.v <= 2 * BRAKE * math.max(distToLine, 0) + 9
+					if canStop then
+						car.stopping = inter
+					else
+						car.committed = inter
+					end
+				end
+				if car.stopping == inter then
+					limitToStopAt(math.max(distToLine, 0), BRAKE * 0.6)
+				end
+			end
+		end
+	end
+
+	-- Jugadores en la calzada
+	local pos0 = sample(car.s)
+	local dirTravel = car.lane > 0 and dir0 or -dir0
+	local right = dirTravel:Cross(Vector3.yAxis)
+	local blocking = playerBlocking(car, pos0 + right * LANE_OFFSET, dirTravel)
+	if blocking < math.huge then
+		limitToStopAt(blocking - 7, BRAKE)
+	end
+
+	-- Integracion (aceleracion limitada)
+	local dv = desired - car.v
+	local a = math.clamp(dv / math.max(dt, 1e-3), -BRAKE, ACCEL)
+	car.v = math.max(0, car.v + a * dt)
+	car.accel += (a - car.accel) * math.min(1, dt * 6)
+	car.braking = a < -2
+	car.s = (car.s + car.lane * car.v * dt) % path.length
+	if not render then
+		return
+	end
+
+	-- Pose
+	local pos, dir = sample(car.s)
+	if car.lane < 0 then
+		dir = -dir
+	end
+	local r = dir:Cross(Vector3.yAxis)
+	local p = pos + r * LANE_OFFSET + Vector3.new(0, 0.3, 0)
+	-- Balanceo en curva (aceleracion lateral v^2/r) y cabeceo al acelerar/frenar
+	local _, dirAhead = sample(car.s + car.lane * 2)
+	if car.lane < 0 then
+		dirAhead = -dirAhead
+	end
+	local turn = dir:Cross(dirAhead).Y -- signo del giro
+	local targetRoll = math.clamp(turn * car.v * car.v * 0.0011, -0.07, 0.07)
+	car.roll += (targetRoll - car.roll) * math.min(1, dt * 5)
+	local targetPitch = math.clamp(car.accel * 0.0035, -0.05, 0.035)
+	car.pitch += (targetPitch - car.pitch) * math.min(1, dt * 7)
+	local suspension = math.sin(t * 9 + car.s) * 0.04 * math.min(1, car.v / 20)
+	local body = CFrame.lookAt(p, p + dir) * CFrame.new(0, suspension, 0) * CFrame.Angles(car.pitch, 0, car.roll)
+	local flat = CFrame.lookAt(p, p + dir)
+	car.wheelAngle = (car.wheelAngle - car.v * dt / 0.9) % (math.pi * 2)
+	for _, info in ipairs(car.parts) do
+		if info.wheel then
+			info.part.CFrame = flat * info.rel * CFrame.Angles(car.wheelAngle, 0, 0)
+		else
+			info.part.CFrame = body * info.rel
+			if info.tail then
+				info.part.Color = car.braking and Color3.fromRGB(255, 40, 40) or Color3.fromRGB(150, 30, 30)
+			end
+		end
+	end
+end
+
+function Traffic.start()
+	for _, car in ipairs(CollectionService:GetTagged("TE_Car")) do
+		register(car)
+	end
+	if path then
+		setupIntersections()
+	end
+end
+
+function Traffic.step(dt, t, camPos)
+	if not path then
+		return
+	end
+	Traffic._time = t
+	Traffic._length = path.length
+	dt = math.min(dt, 0.1)
+	for _, car in ipairs(cars) do
+		if car.model.Parent then
+			-- Lejos de la camara se simula igual (mismo comportamiento), pero sin mover piezas
+			local pos = sample(car.s)
+			car.active = (pos - camPos).Magnitude < ACTIVE_RANGE
+			stepCar(car, dt, t, car.active)
+		end
+	end
+end
+
+-- Para las pruebas
+Traffic._cars = cars
+Traffic._sample = function(s)
+	return sample(s)
+end
+Traffic._intersections = intersections
+
+return Traffic
+]]></string>
+            </Properties>
+          </Item>
+        </Item>
       </Item>
     </Item>
   </Item>
-  <Item class="Workspace" referent="41">
+  <Item class="Workspace" referent="45">
     <Properties>
       <string name="Name">Workspace</string>
       <float name="Gravity">196.2</float>

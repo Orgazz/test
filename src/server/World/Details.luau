@@ -276,18 +276,32 @@ function Details.crossings(map, ringX, ringZ)
 			Details.crosswalk(folder, CFrame.new(s * 175, 0.33, sz * 16), 16, 3.5)
 		end
 	end
-	-- Semaforos en los cruces con el anillo
+	-- Semaforos: en cada cruce de una avenida con el anillo hay luces para la
+	-- avenida y luces (en fase opuesta) para el trafico del anillo, que se detiene en rojo.
+	local function at(x, z, yaw)
+		-- El brazo del semaforo (-Z local) apunta hacia el centro de la calzada
+		return CFrame.new(x, 0.5, z) * CFrame.Angles(0, math.rad(yaw), 0)
+	end
+	local function light(cf, phase, road, cx, cz)
+		local m = Details.trafficLight(folder, cf, phase)
+		m:SetAttribute("Road", road)
+		m:SetAttribute("CenterX", cx)
+		m:SetAttribute("CenterZ", cz)
+	end
 	local phase = 0
 	for _, s in ipairs({ -1, 1 }) do
+		-- Cruce de la avenida norte-sur con el anillo en (0, s * ringZ)
 		phase += 0.25
-		-- El brazo del semaforo (-Z local) apunta hacia el centro de la calzada
-		local function at(x, z, yaw)
-			return CFrame.new(x, 0.5, z) * CFrame.Angles(0, math.rad(yaw), 0)
-		end
-		Details.trafficLight(folder, at(15, s * (ringZ - 20), 90), phase)
-		Details.trafficLight(folder, at(-15, s * (ringZ - 20), -90), phase + 0.5)
-		Details.trafficLight(folder, at(s * (ringX - 20), 15, 0), phase + 0.5)
-		Details.trafficLight(folder, at(s * (ringX - 20), -15, 180), phase)
+		light(at(15, s * (ringZ - 20), 90), phase, "main", 0, s * ringZ)
+		light(at(-15, s * (ringZ - 20), -90), phase, "main", 0, s * ringZ)
+		light(at(14, s * (ringZ + 13), s > 0 and 0 or 180), phase + 0.5, "ring", 0, s * ringZ)
+		light(at(-14, s * (ringZ + 13), s > 0 and 0 or 180), phase + 0.5, "ring", 0, s * ringZ)
+		-- Cruce de la avenida este-oeste con el anillo en (s * ringX, 0)
+		phase += 0.25
+		light(at(s * (ringX - 20), 15, 0), phase, "main", s * ringX, 0)
+		light(at(s * (ringX - 20), -15, 180), phase, "main", s * ringX, 0)
+		light(at(s * (ringX + 13), 14, s > 0 and 90 or -90), phase + 0.5, "ring", s * ringX, 0)
+		light(at(s * (ringX + 13), -14, s > 0 and 90 or -90), phase + 0.5, "ring", s * ringX, 0)
 	end
 	return folder
 end
@@ -314,18 +328,53 @@ function Details.flag(parent, cf, color, text)
 	local m = Kit.model(parent, "FlagPole")
 	Kit.cylinder(m, "Pole", 16, 0.4, cf * CFrame.new(0, 8, 0), Color3.fromRGB(220, 220, 225), Enum.Material.Metal)
 	Kit.ball(m, "Finial", 0.8, cf * CFrame.new(0, 16.2, 0), Color3.fromRGB(255, 200, 60), Enum.Material.Foil)
+	-- Tela dividida en segmentos: el cliente los encadena para que ondee (TE_Flag)
 	local flagModel = Kit.model(m, "Flag")
 	local hinge = cf * CFrame.new(0, 14, 0)
-	local cloth = Kit.box(flagModel, "Cloth", Vector3.new(5, 3, 0.15), hinge * CFrame.new(2.7, 0, 0), color, Enum.Material.Fabric, { CanCollide = false })
-	Kit.box(flagModel, "Stripe", Vector3.new(5, 0.6, 0.17), hinge * CFrame.new(2.7, 0, 0), WHITE, Enum.Material.Fabric, { CanCollide = false })
+	local segments = 5
+	local segW = 5.4 / segments
+	for i = 1, segments do
+		local segColor = (i % 2 == 0) and color:Lerp(WHITE, 0.35) or color
+		Kit.box(flagModel, "Seg" .. i, Vector3.new(segW + 0.05, 3, 0.15), hinge * CFrame.new(segW * (i - 0.5) + 0.2, 0, 0), segColor, Enum.Material.Fabric, { CanCollide = false, CastShadow = false })
+	end
 	if text then
-		Kit.surfaceText(cloth, text, Enum.NormalId.Front, nil, WHITE)
-		Kit.surfaceText(cloth, text, Enum.NormalId.Back, nil, WHITE)
+		-- El texto va en un estandarte fijo bajo la bandera
+		local banner = Kit.box(m, "Banner", Vector3.new(3.4, 1, 0.2), cf * CFrame.new(1.9, 10.5, 0), color, Enum.Material.SmoothPlastic, { CanCollide = false })
+		Kit.box(m, "BannerArm", Vector3.new(3.6, 0.15, 0.15), cf * CFrame.new(1.9, 11.1, 0), Color3.fromRGB(220, 220, 225), Enum.Material.Metal)
+		Kit.surfaceText(banner, text, Enum.NormalId.Front, nil, WHITE)
+		Kit.surfaceText(banner, text, Enum.NormalId.Back, nil, WHITE)
 	end
 	flagModel.WorldPivot = hinge
-	flagModel:AddTag("TE_Sway")
-	flagModel:SetAttribute("SwayAngle", 18)
-	flagModel:SetAttribute("SwaySpeed", 0.6)
+	flagModel:SetAttribute("Segments", segments)
+	flagModel:SetAttribute("SegmentWidth", segW)
+	flagModel:AddTag("TE_Flag")
+	return m
+end
+
+------------------------------------------------------------------------------
+-- Trampolin (el cliente aplica el impulso al personaje local: fisica fluida)
+------------------------------------------------------------------------------
+
+function Details.trampoline(parent, cf, color)
+	local m = Kit.model(parent, "Trampoline")
+	local frame = Color3.fromRGB(60, 90, 200)
+	for i = 0, 5 do
+		local a = math.rad(i * 60 + 30)
+		Kit.box(m, "Leg", Vector3.new(0.5, 2.2, 0.5), cf * CFrame.new(math.cos(a) * 5.2, 1.1, math.sin(a) * 5.2), DARK, Enum.Material.Metal)
+	end
+	Kit.cylinder(m, "Rim", 0.8, 12, cf * CFrame.new(0, 2.4, 0), frame, Enum.Material.Metal)
+	for i = 0, 11 do
+		local a = math.rad(i * 30)
+		Kit.box(m, "Spring", Vector3.new(0.9, 0.25, 0.25), cf * CFrame.new(math.cos(a) * 5.2, 2.85, math.sin(a) * 5.2) * CFrame.Angles(0, -a, 0), Color3.fromRGB(200, 200, 210), Enum.Material.Metal)
+	end
+	local mat = Kit.cylinder(m, "Mat", 0.3, 9.6, cf * CFrame.new(0, 2.95, 0), color or Color3.fromRGB(255, 90, 160), Enum.Material.Fabric)
+	Kit.cylinder(m, "Ring", 0.32, 4, cf * CFrame.new(0, 2.96, 0), Color3.fromRGB(255, 230, 90), Enum.Material.Neon, { CanCollide = false })
+	mat:AddTag("TE_Trampoline")
+	mat:SetAttribute("Power", 115)
+	local sign = Kit.box(m, "Sign", Vector3.new(4, 1.2, 0.2), cf * CFrame.new(0, 4.6, 6.2), Color3.fromRGB(255, 220, 90))
+	Kit.surfaceText(sign, "¡SALTA!", Enum.NormalId.Front, Color3.fromRGB(255, 220, 90), DARK)
+	Kit.surfaceText(sign, "¡SALTA!", Enum.NormalId.Back, Color3.fromRGB(255, 220, 90), DARK)
+	Kit.box(m, "SignPost", Vector3.new(0.3, 3.6, 0.3), cf * CFrame.new(0, 2, 6.2), DARK, Enum.Material.Metal)
 	return m
 end
 

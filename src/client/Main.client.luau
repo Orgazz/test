@@ -16,6 +16,7 @@ local Hud = require(script.Parent.UI.Hud)
 local Panels = require(script.Parent.UI.Panels)
 local Effects = require(script.Parent.Effects)
 local Animator = require(script.Parent.Animator)
+local Physics = require(script.Parent.Physics)
 local Tutorial = require(script.Parent.Tutorial)
 
 local player = Players.LocalPlayer
@@ -106,7 +107,11 @@ Panels.init(Hud.gui(), {
 })
 
 Effects.init(Hud.gui())
+Animator.onBuild = function(position)
+	Physics.debrisBurst(position, 12)
+end
 Animator.start(map)
+Physics.start(Hud.gui())
 Tutorial.init(map)
 
 ------------------------------------------------------------------------------
@@ -137,10 +142,21 @@ remotes.Effect.OnClientEvent:Connect(function(payload)
 		Effects.confetti(70)
 	elseif kind == "cash" then
 		Effects.cashBurst(payload.amount, Hud.cashPanel())
+		if payload.position then
+			Physics.coinBurst(payload.position, 14)
+		end
 	elseif kind == "build" then
 		Effects.flash(Theme.C.green)
+		if payload.position then
+			Physics.coinBurst(payload.position, 10)
+		end
+	elseif kind == "rain" then
+		Effects.flash(Theme.C.gold)
 	elseif kind == "levelup" then
 		Effects.flash(Theme.C.blue)
+		if payload.position then
+			Physics.coinBurst(payload.position, 8)
+		end
 		if payload.level == Config.MaxBusinessLevel then
 			Effects.confetti(40)
 		end

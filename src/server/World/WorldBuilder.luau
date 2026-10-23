@@ -301,6 +301,9 @@ local function buildPlaza(map)
 	Details.flag(plaza, CFrame.new(28, 0.6, -50), Color3.fromRGB(90, 200, 120), "⭐")
 	Details.flag(plaza, CFrame.new(-28, 0.6, -50), Color3.fromRGB(255, 200, 60), "TINY EMPIRE")
 	Details.busStop(plaza, CFrame.new(72, 0.2, 30))
+	-- Trampolines (fisica de salto en el cliente)
+	Details.trampoline(plaza, CFrame.lookAt(Vector3.new(44, 0.6, 0), Vector3.new(0, 0.6, 0)), Color3.fromRGB(255, 90, 160))
+	Details.trampoline(plaza, CFrame.lookAt(Vector3.new(-44, 0.6, 0), Vector3.new(0, 0.6, 0)), Color3.fromRGB(80, 200, 255))
 	-- Zona de recogida de maletines
 	local crates = Instance.new("Folder")
 	crates.Name = "Crates"

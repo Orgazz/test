@@ -262,6 +262,10 @@ end
 -- Metodos implementados por el arnes (Lune no los trae)
 local Methods = {}
 
+-- Metodos del motor que en las pruebas no hacen nada
+function Methods.ChangeState(_self, _state) end
+function Methods.SetNetworkOwner(_self, _owner) end
+
 function Methods.GetPivot(self)
 	local real = proxyToReal[self]
 	if real:IsA("BasePart") then
@@ -757,6 +761,31 @@ function H.setup(opts)
 		end,
 	})
 
+	H.collisionGroups = {}
+	local physicsService = newService("PhysicsService", {
+		RegisterCollisionGroup = function(_, name)
+			H.collisionGroups[name] = H.collisionGroups[name] or {}
+		end,
+		IsCollisionGroupRegistered = function(_, name)
+			return name == "Default" or H.collisionGroups[name] ~= nil
+		end,
+		CollisionGroupSetCollidable = function(_, a, b, value)
+			assert(H.collisionGroups[a] or a == "Default", "grupo no registrado: " .. a)
+			assert(H.collisionGroups[b] or b == "Default", "grupo no registrado: " .. b)
+			H.collisionGroups[a][b] = value
+		end,
+	})
+	local userInput = newService("UserInputService", {
+		InputBegan = Signal.new("InputBegan"),
+		InputEnded = Signal.new("InputEnded"),
+		TouchEnabled = false,
+		KeyboardEnabled = true,
+		GetFocusedTextBox = function()
+			return nil
+		end,
+	})
+	H.userInput = userInput
+
 	local tweenService = newService("TweenService", {
 		Create = function(_, inst, _info, goals)
 			local tween = { Completed = Signal.new("Completed") }
@@ -812,6 +841,8 @@ function H.setup(opts)
 		DataStoreService = dataStoreService,
 		MarketplaceService = marketplace,
 		CollectionService = collection,
+		PhysicsService = physicsService,
+		UserInputService = userInput,
 		TweenService = tweenService,
 		HttpService = httpService,
 		SoundService = soundService,
@@ -955,6 +986,7 @@ local function makeEnv(realm, scriptProxy)
 		NumberSequenceKeypoint = roblox.NumberSequenceKeypoint,
 		NumberRange = roblox.NumberRange,
 		Rect = roblox.Rect,
+		PhysicalProperties = roblox.PhysicalProperties,
 		Ray = roblox.Ray,
 		Random = RandomMock,
 		TweenInfo = TweenInfoMock,

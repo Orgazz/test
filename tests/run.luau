@@ -5,7 +5,9 @@
 
 local process = require("@lune/process")
 local Enum = require("@lune/roblox").Enum
+local Vector3 = require("@lune/roblox").Vector3
 local H = require("./harness")
+local CFrame = H.CFrame
 
 local placePath = process.args[1] or "build/TinyEmpireTycoon.rbxlx"
 
@@ -74,6 +76,7 @@ local GameService = server.require(ServerRoot.Services.GameService)
 local PlotService = server.require(ServerRoot.Services.PlotService)
 local ChallengeService = server.require(ServerRoot.Services.ChallengeService)
 local DataService = server.require(ServerRoot.Services.DataService)
+local CrateService = server.require(ServerRoot.Services.CrateService)
 local workspace = H.workspace
 local map = workspace:FindFirstChild("TinyEmpireMap")
 
@@ -154,7 +157,7 @@ do
 	check(hoods == 4, "hay 4 barrios")
 	check(#map.Vehicles:GetChildren() == 12, "hay 12 vehiculos decorativos")
 	check(#map.Pedestrians:GetChildren() == 28, "hay 28 peatones")
-	check(#game:GetService("CollectionService"):GetTagged("TE_TrafficLight") == 8, "hay 8 semaforos")
+	check(#game:GetService("CollectionService"):GetTagged("TE_TrafficLight") == 16, "hay 16 semaforos (avenidas y anillo)")
 	check(#map.Clouds:GetChildren() == 16, "hay nubes en el cielo")
 	check(map:FindFirstChild("LeaderboardBoard", true) ~= nil, "existe el panel de ranking")
 	local lamps = #game:GetService("CollectionService"):GetTagged("TE_Lamp")
@@ -653,6 +656,200 @@ do
 		-- Ganancias y animaciones durante un rato
 		H.advance(20, 0.1)
 	end
+
+	--------------------------------------------------------------------------
+	section("Fisicas y animaciones")
+	--------------------------------------------------------------------------
+	local clientScripts = clientRoot
+	local Traffic = client.require(clientScripts.World.Traffic)
+	local Pedestrians = client.require(clientScripts.World.Pedestrians)
+	local Physics = client.require(clientScripts.Physics)
+	local Animator = client.require(clientScripts.Animator)
+	local character = H.customOf(dave).Character
+	local root = character.HumanoidRootPart
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+
+	-- Grupos de colision
+	check(H.collisionGroups["TE_Effects"] and H.collisionGroups["TE_Effects"]["TE_Players"] == false, "los efectos fisicos no chocan con jugadores")
+	check(root.CollisionGroup == "TE_Players", "el personaje usa el grupo de colision TE_Players")
+
+	-- Trampolin
+	local mats = game:GetService("CollectionService"):GetTagged("TE_Trampoline")
+	check(#mats == 2, "hay 2 trampolines en la plaza")
+	root.AssemblyLinearVelocity = Vector3.new(5, 0, 0)
+	mats[1].Touched:Fire(root)
+	H.advance(0.05, 0.05)
+	check(root.AssemblyLinearVelocity.Y >= 100, "el trampolin impulsa al jugador hacia arriba (" .. root.AssemblyLinearVelocity.Y .. ")")
+	check(root.AssemblyLinearVelocity.X > 5, "el trampolin conserva y amplia el impulso horizontal")
+	local matSpring = Physics._springs[mats[1]]
+	H.advance(0.1, 0.02)
+	check(matSpring and matSpring.x < -0.1, "la lona del trampolin se hunde")
+	H.advance(3, 0.02)
+	check(math.abs(matSpring.x) < 0.05, "la lona vuelve a su sitio (muelle amortiguado)")
+	local otherPlayer = H.customOf(bob).Character
+	local velBefore = otherPlayer.HumanoidRootPart.AssemblyLinearVelocity
+	mats[2].Touched:Fire(otherPlayer.HumanoidRootPart)
+	H.advance(0.05, 0.05)
+	check(otherPlayer.HumanoidRootPart.AssemblyLinearVelocity == velBefore, "cada cliente solo impulsa a su propio personaje")
+
+	-- Sprint
+	H.userInput.InputBegan:Fire({ KeyCode = Enum.KeyCode.LeftShift }, false)
+	H.advance(0.3, 0.05)
+	check(humanoid.WalkSpeed > 16 and humanoid.WalkSpeed < 26, "el sprint acelera progresivamente (" .. math.floor(humanoid.WalkSpeed) .. ")")
+	H.advance(1.5, 0.05)
+	check(math.abs(humanoid.WalkSpeed - 26) < 0.5, "velocidad de sprint alcanzada")
+	check(workspace.CurrentCamera.FieldOfView == 80, "el campo de vision se abre al correr")
+	H.userInput.InputEnded:Fire({ KeyCode = Enum.KeyCode.LeftShift }, false)
+	H.advance(2, 0.05)
+	check(math.abs(humanoid.WalkSpeed - 16) < 0.5, "al soltar Shift vuelve a caminar")
+
+	-- Monedas fisicas al recoger un maletin
+	local crate = CrateService.spawn(true)
+	check(crate.Body.Anchored == false, "los maletines caen con fisica real")
+	H.advance(4, 0.1)
+	check(crate.Body.Anchored == true and crate:HasTag("TE_Spin"), "al asentarse se anclan y giran")
+	H.touch(dave, crate.Touch)
+	H.advance(0.2, 0.05)
+	local coins = 0
+	for _, d in ipairs(workspace:GetChildren()) do
+		if d.Name == "TE_Effect" then
+			coins += 1
+			if d.Anchored or d.CollisionGroup ~= "TE_Effects" then
+				coins = -999
+			end
+		end
+	end
+	check(coins >= 10, "al recoger un maletin saltan monedas fisicas (" .. coins .. ")")
+	H.advance(3.5, 0.1)
+	local left = 0
+	for _, d in ipairs(workspace:GetChildren()) do
+		if d.Name == "TE_Effect" then
+			left += 1
+		end
+	end
+	check(left == 0, "las monedas desaparecen solas")
+
+	-- Lluvia de maletines
+	local before = #map.Crates:GetChildren()
+	CrateService.rain()
+	H.advance(4, 0.1)
+	check(#map.Crates:GetChildren() >= before + 6, "la lluvia de maletines suelta varios a la vez")
+	check((lastNotify(dave) or ""):find("Lluvia") ~= nil, "se avisa de la lluvia de maletines")
+
+	-- Trafico: avanzan, frenan ante un jugador y respetan los semaforos
+	local cars = Traffic._cars
+	check(#cars == 12, "12 coches simulados")
+	local moving = 0
+	for _, c in ipairs(cars) do
+		if c.v > 5 then
+			moving += 1
+		end
+	end
+	check(moving >= 6, "los coches circulan (" .. moving .. " en marcha)")
+	-- Poner al jugador delante del coche 1
+	local car = cars[1]
+	local pos, dir = Traffic._sample(car.s)
+	if car.lane < 0 then
+		dir = -dir
+	end
+	local laneRight = dir:Cross(Vector3.yAxis)
+	root.CFrame = CFrame.new(pos + dir * 30 + laneRight * 5 + Vector3.new(0, 3, 0))
+	car.v = car.cruise
+	for _ = 1, 40 do
+		H.advance(0.1, 0.1)
+		local p2 = Traffic._sample(car.s)
+		local _ = p2
+	end
+	check(car.v < 1, "el coche frena hasta pararse ante un jugador (" .. string.format("%.1f", car.v) .. ")")
+	local p3 = Traffic._sample(car.s)
+	check((p3 - (pos + dir * 30)).Magnitude > 4, "el coche se detiene antes de atropellar")
+	root.CFrame = CFrame.new(0, 5, -44)
+	H.advance(4, 0.1)
+	check(car.v > 5, "cuando el jugador se aparta, el coche reanuda la marcha")
+
+	-- Semaforos: ningun coche cruza con el rojo bien establecido
+	local violations, crossings = 0, 0
+	local prevS = {}
+	for i, c in ipairs(cars) do
+		prevS[i] = c.s
+	end
+	local inters = Traffic._intersections
+	check(#inters == 4, "4 cruces regulados en el anillo")
+	local function ahead(c, s0, s1)
+		if c.lane > 0 then
+			return (s1 - s0) % 2000
+		end
+		return (s0 - s1) % 2000
+	end
+	local _ = ahead
+	for _ = 1, 400 do
+		H.advance(0.1, 0.1)
+		local t = Traffic._time or 0
+		for i, c in ipairs(cars) do
+			for _, inter in ipairs(inters) do
+				-- cruce de la linea central del cruce en este paso
+				local a0 = c.lane > 0 and (inter.s - prevS[i]) or (prevS[i] - inter.s)
+				local a1 = c.lane > 0 and (inter.s - c.s) or (c.s - inter.s)
+				local L = Traffic._length
+				a0 %= L
+				a1 %= L
+				if a0 < 40 and a1 > L - 40 then
+					crossings += 1
+					local cycle = (t / 12 + inter.phase) % 1
+					if cycle > 0.54 + 2 / 12 then
+						violations += 1
+						print(string.format("    infraccion: coche %d carril %d v=%.1f ciclo=%.3f s0=%.1f s1=%.1f cruce=%.1f", i, c.lane, c.v, cycle, prevS[i], c.s, inter.s))
+					end
+				end
+			end
+			prevS[i] = c.s
+		end
+	end
+	check(crossings > 5, "los coches cruzan las intersecciones (" .. crossings .. ")")
+	check(violations == 0, "ningun coche se salta un semaforo en rojo (" .. violations .. ")")
+
+	-- Peatones
+	local walkers = Pedestrians._walkers
+	check(#walkers == 28, "28 peatones animados")
+	local turned, idled = 0, 0
+	for _ = 1, 300 do
+		H.advance(0.1, 0.1)
+		for _, w in ipairs(walkers) do
+			if w.state == "turn" then
+				turned += 1
+			elseif w.state == "idle" then
+				idled += 1
+			end
+		end
+	end
+	check(turned > 0, "los peatones se paran y dan la vuelta al final de la acera")
+	check(idled > 0, "los peatones hacen pausas para mirar a su alrededor")
+	local finite = true
+	for _, w in ipairs(walkers) do
+		local p = w.parts[1].part.Position
+		if p.X ~= p.X or math.abs(p.Y - w.baseY) > 6 then
+			finite = false
+		end
+	end
+	check(finite, "posiciones de peatones validas")
+
+	-- Banderas y arboles
+	local flagsList = Animator._flags
+	check(#flagsList == 4, "4 banderas con tela por segmentos")
+	local seg = flagsList[1].segs[#flagsList[1].segs]
+	local c1 = seg.CFrame
+	H.advance(0.5, 0.1)
+	check((seg.CFrame.Position - c1.Position).Magnitude > 0.01, "la bandera ondea")
+	local swaying = 0
+	for _, e in pairs(Animator._entries) do
+		if e.swayMode == "tilt" then
+			swaying += 1
+		end
+	end
+	check(swaying > 100, "los arboles se mecen con el viento (" .. swaying .. ")")
+	-- "+$" con trayectoria parabolica
+	H.advance(4, 0.1)
+	check(#H.errors == 0, "sin errores en las animaciones")
 	H.clientPlayer = nil
 end
 

@@ -1,6 +1,13 @@
 --!nonstrict
--- Animaciones del mundo en el cliente (suaves y sin coste de red):
--- giros, flotacion, deslizamientos, neones, coches, construccion y "+$" flotantes.
+-- Animaciones del mundo en el cliente (suaves y sin coste de red).
+--   TE_Spin / TE_Bob / TE_Slide  movimiento de maquinas y objetos (con aceleracion
+--                                al aparecer y "squash & stretch" al flotar)
+--   TE_Pulse                     neones que laten
+--   TE_Sway                      balanceo: "yaw" (giro) o "tilt" (arboles al viento)
+--   TE_Flag                      banderas por segmentos que ondean como tela
+--   TE_Cloud                     nubes a la deriva
+-- Ademas: construccion animada, "+$" con trayectoria parabolica, botones de compra
+-- que laten, trafico (World/Traffic) y peatones (World/Pedestrians).
 
 local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
@@ -8,12 +15,23 @@ local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Format = require(ReplicatedStorage:WaitForChild("TinyEmpireShared").Format)
+local Traffic = require(script.Parent.World.Traffic)
+local Pedestrians = require(script.Parent.World.Pedestrians)
 
 local Animator = {}
 
 local entries = {} -- [Instance] = entry
-local cars = {}
+local flags = {}
+local clouds = {}
+local trafficLights = {}
+local pads = {}
+local popups = {}
 local ACTIVE_RANGE = 320
+
+-- Viento global: rafagas lentas que modulan arboles y banderas
+local function wind(t)
+	return 0.75 + 0.25 * math.sin(t * 0.21) + 0.15 * math.sin(t * 0.83 + 1.3)
+end
 
 local function pivotOf(inst)
 	if inst:IsA("Model") then
@@ -43,6 +61,7 @@ local function register(inst)
 		base = pivotOf(inst),
 		baseTransparency = inst:IsA("BasePart") and inst.Transparency or 0,
 		seed = math.random() * 10,
+		born = os.clock(),
 		active = true,
 		dirtyTags = true,
 	}
@@ -59,6 +78,7 @@ local function refreshTags(e)
 	e.slide = inst:HasTag("TE_Slide")
 	e.pulse = inst:HasTag("TE_Pulse") and inst:IsA("BasePart")
 	e.sway = inst:HasTag("TE_Sway")
+	e.swayMode = inst:GetAttribute("SwayMode") or "yaw"
 	e.swayAngle = math.rad(inst:GetAttribute("SwayAngle") or 15)
 	e.swaySpeed = inst:GetAttribute("SwaySpeed") or 0.5
 	e.spinSpeed = math.rad(inst:GetAttribute("SpinSpeed") or 45)
@@ -70,10 +90,20 @@ local function refreshTags(e)
 	e.slideMode = inst:GetAttribute("SlideMode") or "pingpong"
 	e.slidePhase = inst:GetAttribute("SlidePhase") or 0
 	e.pulseSpeed = inst:GetAttribute("PulseSpeed") or 1
+	e.spinAngle = e.spinAngle or 0
 	e.dirtyTags = false
 end
 
-local function step(t)
+-- Movimiento de vaiven con pausa en los extremos (como una maquina real)
+local function easedPingPong(phase)
+	local x = phase % 1
+	local f = x < 0.5 and x * 2 or (1 - x) * 2 -- triangulo 0..1..0
+	f = math.clamp((f - 0.08) / 0.84, 0, 1) -- pequenas pausas en los extremos
+	return f * f * (3 - 2 * f)
+end
+
+local function step(t, dt)
+	local w = wind(t)
 	for inst, e in pairs(entries) do
 		if not e.active then
 			continue
@@ -86,22 +116,27 @@ local function step(t)
 			local cf = e.base
 			if e.slide then
 				local phase = t * e.slideSpeed + e.slidePhase
-				local f
-				if e.slideMode == "loop" then
-					f = phase % 1
-				else
-					f = (1 - math.cos(phase * math.pi * 2)) / 2
-				end
+				local f = e.slideMode == "loop" and (phase % 1) or easedPingPong(phase)
 				cf = cf * CFrame.new(e.slideOffset * f)
 			end
 			if e.bob then
 				cf = cf + Vector3.new(0, math.sin((t + e.seed) * e.bobSpeed * math.pi) * e.bobHeight, 0)
 			end
 			if e.sway then
-				cf = cf * CFrame.Angles(0, math.sin((t + e.seed) * e.swaySpeed * math.pi * 2) * e.swayAngle, 0)
+				local s = math.sin((t + e.seed) * e.swaySpeed * math.pi * 2)
+				if e.swayMode == "tilt" then
+					-- Arbol: se inclina desde la base, con rafagas de viento
+					local s2 = math.sin((t + e.seed) * e.swaySpeed * 1.7 * math.pi * 2 + 1.1)
+					cf = cf * CFrame.Angles(s * e.swayAngle * w, 0, s2 * e.swayAngle * 0.6 * w)
+				else
+					cf = cf * CFrame.Angles(0, s * e.swayAngle, 0)
+				end
 			end
 			if e.spin then
-				local a = (t + e.seed) * e.spinSpeed
+				-- Arranque progresivo durante el primer segundo (inercia)
+				local ramp = math.clamp((os.clock() - e.born) / 1.2, 0, 1)
+				e.spinAngle += e.spinSpeed * dt * ramp * ramp
+				local a = e.spinAngle + e.seed
 				if e.spinAxis == "X" then
 					cf = cf * CFrame.Angles(a, 0, 0)
 				elseif e.spinAxis == "Z" then
@@ -114,18 +149,13 @@ local function step(t)
 		end
 		if e.pulse then
 			local s = (math.sin((t + e.seed) * e.pulseSpeed * math.pi * 2) + 1) / 2
-			inst.Transparency = e.baseTransparency + s * 0.45
+			inst.Transparency = e.baseTransparency + s * s * 0.45
 		end
 	end
 end
 
 -- Solo se animan objetos cercanos a la camara
-local function updateActive()
-	local cam = workspace.CurrentCamera
-	if not cam then
-		return
-	end
-	local camPos = cam.CFrame.Position
+local function updateActive(camPos)
 	for _, e in pairs(entries) do
 		local ok, pos = pcall(function()
 			return e.base.Position
@@ -135,156 +165,63 @@ local function updateActive()
 end
 
 ------------------------------------------------------------------------------
--- Coches por el anillo exterior
+-- Banderas: segmentos encadenados con onda que avanza hacia el extremo
 ------------------------------------------------------------------------------
 
-local function pointOnRing(rx, rz, s)
-	local w, h = rx * 2, rz * 2
-	local perim = 2 * (w + h)
-	s = s % perim
-	if s < w then
-		return Vector3.new(-rx + s, 0, -rz), Vector3.new(1, 0, 0)
-	end
-	s -= w
-	if s < h then
-		return Vector3.new(rx, 0, -rz + s), Vector3.new(0, 0, 1)
-	end
-	s -= h
-	if s < w then
-		return Vector3.new(rx - s, 0, rz), Vector3.new(-1, 0, 0)
-	end
-	s -= w
-	return Vector3.new(-rx, 0, rz - s), Vector3.new(0, 0, -1)
-end
-
-local function stepCars(t)
-	for _, car in ipairs(cars) do
-		if car.model.Parent then
-			local rx, rz = car.rx, car.rz
-			local perim = 2 * (rx * 2 + rz * 2)
-			local s = car.phase * perim + t * car.speed * car.lane
-			local pos, dir = pointOnRing(rx, rz, s)
-			if car.lane < 0 then
-				dir = -dir
-			end
-			local right = dir:Cross(Vector3.yAxis)
-			local p = pos + right * 5 + Vector3.new(0, 0.3, 0)
-			car.model:PivotTo(CFrame.lookAt(p, p + dir))
+local function registerFlag(model)
+	local segs = {}
+	local n = model:GetAttribute("Segments") or 5
+	for i = 1, n do
+		local seg = model:FindFirstChild("Seg" .. i)
+		if seg then
+			table.insert(segs, seg)
 		end
 	end
-end
-
-local function registerCar(model)
-	local folder = model.Parent
-	table.insert(cars, {
+	table.insert(flags, {
 		model = model,
-		rx = folder:GetAttribute("RingX") or 330,
-		rz = folder:GetAttribute("RingZ") or 185,
-		phase = model:GetAttribute("Phase") or 0,
-		lane = model:GetAttribute("Lane") or 1,
-		speed = model:GetAttribute("Speed") or 25,
+		segs = segs,
+		width = model:GetAttribute("SegmentWidth") or 1,
+		hinge = model:GetPivot(),
+		seed = math.random() * 10,
 	})
 end
 
-------------------------------------------------------------------------------
--- Peatones, semaforos y nubes
-------------------------------------------------------------------------------
-
-local walkers = {}
-local trafficLights = {}
-local clouds = {}
-
-local function registerWalker(model)
-	local pivot = model:GetPivot()
-	local parts = {}
-	for _, d in ipairs(model:GetDescendants()) do
-		if d:IsA("BasePart") then
-			local rel = pivot:ToObjectSpace(d.CFrame)
-			local limb = nil
-			if d.Name == "LegL" or (d.Name == "Shoe" and rel.Position.X < 0) then
-				limb = "legL"
-			elseif d.Name == "LegR" or (d.Name == "Shoe" and rel.Position.X > 0) then
-				limb = "legR"
-			elseif d.Name == "ArmL" then
-				limb = "armL"
-			elseif d.Name == "ArmR" then
-				limb = "armR"
-			end
-			table.insert(parts, { part = d, rel = rel, limb = limb })
-		end
-	end
-	table.insert(walkers, {
-		model = model,
-		parts = parts,
-		mode = model:GetAttribute("WalkMode") or "circle",
-		cx = model:GetAttribute("CenterX") or 0,
-		cz = model:GetAttribute("CenterZ") or 0,
-		radius = model:GetAttribute("Radius") or 20,
-		a = model:GetAttribute("A") or Vector3.zero,
-		b = model:GetAttribute("B") or Vector3.new(10, 0, 0),
-		speed = model:GetAttribute("Speed") or 4,
-		phase = model:GetAttribute("Phase") or 0,
-		baseY = model:GetAttribute("BaseY") or 0.5,
-		active = true,
-	})
-end
-
-local HIP = CFrame.new(0, 2, 0)
-local SHOULDER = CFrame.new(0, 3.9, 0)
-
-local function stepWalkers(t, camPos)
-	for _, w in ipairs(walkers) do
-		if w.model.Parent and w.active then
-			local pos, dir
-			if w.mode == "line" then
-				local delta = w.b - w.a
-				local len = delta.Magnitude
-				local s = (w.phase * 2 * len + t * math.abs(w.speed)) % (2 * len)
-				if s < len then
-					pos = w.a + delta * (s / len)
-					dir = delta.Unit
-				else
-					pos = w.b - delta * ((s - len) / len)
-					dir = -delta.Unit
-				end
-			else
-				local ang = w.phase * math.pi * 2 + t * w.speed / w.radius
-				pos = Vector3.new(w.cx + math.cos(ang) * w.radius, 0, w.cz + math.sin(ang) * w.radius)
-				dir = Vector3.new(-math.sin(ang), 0, math.cos(ang)) * (w.speed >= 0 and 1 or -1)
-			end
-			pos = Vector3.new(pos.X, w.baseY, pos.Z)
-			local pivot = CFrame.lookAt(pos, pos + dir)
-			local swing = math.sin(t * math.abs(w.speed) * 1.9 + w.phase * 10) * 0.55
-			for _, p in ipairs(w.parts) do
-				local cf
-				if p.limb == "legL" or p.limb == "legR" then
-					local a = p.limb == "legL" and swing or -swing
-					cf = pivot * HIP * CFrame.Angles(a, 0, 0) * HIP:Inverse() * p.rel
-				elseif p.limb == "armL" or p.limb == "armR" then
-					local a = p.limb == "armL" and -swing or swing
-					cf = pivot * SHOULDER * CFrame.Angles(a * 0.8, 0, 0) * SHOULDER:Inverse() * p.rel
-				else
-					cf = pivot * p.rel
-				end
-				p.part.CFrame = cf
+local function stepFlags(t, camPos)
+	local w = wind(t)
+	for _, f in ipairs(flags) do
+		if f.model.Parent and (f.hinge.Position - camPos).Magnitude < 220 then
+			-- La bandera apunta a favor del viento y la onda recorre la tela
+			local cf = f.hinge * CFrame.Angles(0, math.sin(t * 0.4 + f.seed) * 0.35 * w, 0) * CFrame.new(0.2, 0, 0)
+			for i, seg in ipairs(f.segs) do
+				local amp = 0.22 + 0.1 * i
+				local bend = math.sin(t * 4.2 * w - i * 0.9 + f.seed) * amp * w
+				local droop = (1 - w) * 0.05 * i
+				cf = cf * CFrame.Angles(0, bend, -droop)
+				seg.CFrame = cf * CFrame.new(f.width / 2, 0, 0)
+				cf = cf * CFrame.new(f.width, 0, 0)
 			end
 		end
 	end
-	local _ = camPos
 end
 
-local function updateWalkersActive(camPos)
-	for _, w in ipairs(walkers) do
-		local root = w.parts[1]
-		w.active = root ~= nil and (root.part.Position - camPos).Magnitude < 260
+------------------------------------------------------------------------------
+-- Nubes y semaforos
+------------------------------------------------------------------------------
+
+local function stepClouds(t)
+	for _, c in ipairs(clouds) do
+		if c.model.Parent then
+			local x = ((c.base.Position.X + t * c.speed + 700) % 1400) - 700
+			local bobY = math.sin(t * 0.1 + c.base.Position.Z) * 2
+			c.model:PivotTo(CFrame.new(x, c.base.Position.Y + bobY, c.base.Position.Z))
+		end
 	end
 end
 
 local function stepTrafficLights(t)
 	for _, tl in ipairs(trafficLights) do
 		if tl.model.Parent then
-			local cycle = (t / 12 + tl.phase) % 1
-			local state = cycle < 0.42 and "Green" or (cycle < 0.54 and "Yellow" or "Red")
+			local state = Traffic.lightState(tl.phase, t)
 			if state ~= tl.state then
 				tl.state = state
 				for _, name in ipairs({ "Red", "Yellow", "Green" }) do
@@ -301,29 +238,51 @@ local function stepTrafficLights(t)
 	end
 end
 
-local function stepClouds(t)
-	for _, c in ipairs(clouds) do
-		if c.model.Parent then
-			local x = ((c.base.Position.X + t * c.speed + 700) % 1400) - 700
-			c.model:PivotTo(CFrame.new(x, c.base.Position.Y, c.base.Position.Z))
+------------------------------------------------------------------------------
+-- Botones de compra: laten y flotan para llamar la atencion
+------------------------------------------------------------------------------
+
+local function registerPad(button)
+	if pads[button] then
+		return
+	end
+	local info = button:FindFirstChild("Info")
+	pads[button] = { button = button, info = info, seed = math.random() * 6 }
+end
+
+local function stepPads(t, camPos)
+	for button, p in pairs(pads) do
+		if not button.Parent then
+			pads[button] = nil
+		else
+			local pad = button.Parent
+			if pad:GetAttribute("Visible") and (button.Position - camPos).Magnitude < 120 then
+				local s = math.sin(t * 3 + p.seed)
+				button.Transparency = 0.12 + (s + 1) * 0.1
+				if p.info then
+					p.info.StudsOffsetWorldSpace = Vector3.new(0, 5.5 + s * 0.25, 0)
+				end
+			end
 		end
 	end
 end
 
 ------------------------------------------------------------------------------
--- Animacion de construccion
+-- Animacion de construccion: las piezas crecen desde el suelo con rebote
 ------------------------------------------------------------------------------
 
 local function isAnimated(inst, root)
 	local node = inst
 	while node and node ~= root do
-		if node:HasTag("TE_Spin") or node:HasTag("TE_Bob") or node:HasTag("TE_Slide") then
+		if node:HasTag("TE_Spin") or node:HasTag("TE_Bob") or node:HasTag("TE_Slide") or node:HasTag("TE_Sway") then
 			return true
 		end
 		node = node.Parent
 	end
 	return false
 end
+
+Animator.onBuild = nil -- function(position) (rafaga fisica de escombros)
 
 function Animator.playBuild(model)
 	local parts = {}
@@ -339,39 +298,43 @@ function Animator.playBuild(model)
 		return
 	end
 	local height = math.max(4, maxY - minY)
+	local center = model:GetPivot().Position
 	for _, p in ipairs(parts) do
-		local target = p.CFrame
-		local delayTime = ((p.Position.Y - minY) / height) * 0.6
-		p.CFrame = target * CFrame.new(0, -3, 0)
-		local origTrans = p.Transparency
+		local targetCF = p.CFrame
+		local targetSize = p.Size
+		-- Retraso segun altura y distancia al centro: la obra "sube" por plantas
+		local radial = Vector3.new(p.Position.X - center.X, 0, p.Position.Z - center.Z).Magnitude
+		local delayTime = ((p.Position.Y - minY) / height) * 0.7 + radial * 0.012
 		p.LocalTransparencyModifier = 1
+		p.Size = targetSize * 0.15
+		p.CFrame = targetCF * CFrame.new(0, -2.5, 0)
 		task.delay(delayTime, function()
 			if not p.Parent then
 				return
 			end
 			p.LocalTransparencyModifier = 0
-			local tween = TweenService:Create(p, TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { CFrame = target })
-			tween:Play()
+			local info = TweenInfo.new(0.42, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+			TweenService:Create(p, info, { CFrame = targetCF, Size = targetSize }):Play()
 		end)
-		local _ = origTrans
 	end
-	-- Nube de polvo y destellos
-	local cf = model:GetPivot()
+	-- Nube de polvo y destellos en la base
 	local puff = Instance.new("Part")
 	puff.Anchored = true
 	puff.CanCollide = false
 	puff.CanQuery = false
+	puff.CanTouch = false
 	puff.Transparency = 1
 	puff.Size = Vector3.new(1, 1, 1)
-	puff.CFrame = cf
+	puff.CFrame = CFrame.new(center)
 	puff.Parent = workspace
 	local dust = Instance.new("ParticleEmitter")
 	dust.Texture = "rbxasset://textures/particles/smoke_main.dds"
 	dust.Color = ColorSequence.new(Color3.fromRGB(240, 225, 200))
-	dust.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 3), NumberSequenceKeypoint.new(1, 8) })
+	dust.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 3), NumberSequenceKeypoint.new(1, 9) })
 	dust.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(1, 1) })
-	dust.Lifetime = NumberRange.new(1, 1.6)
-	dust.Speed = NumberRange.new(8, 14)
+	dust.Lifetime = NumberRange.new(1, 1.8)
+	dust.Speed = NumberRange.new(10, 18)
+	dust.Drag = 3
 	dust.SpreadAngle = Vector2.new(180, 10)
 	dust.Parent = puff
 	local stars = Instance.new("ParticleEmitter")
@@ -379,23 +342,31 @@ function Animator.playBuild(model)
 	stars.Color = ColorSequence.new(Color3.fromRGB(255, 230, 120))
 	stars.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1.4), NumberSequenceKeypoint.new(1, 0) })
 	stars.Lifetime = NumberRange.new(1, 1.8)
-	stars.Speed = NumberRange.new(10, 20)
+	stars.Speed = NumberRange.new(12, 22)
+	stars.Acceleration = Vector3.new(0, -20, 0)
 	stars.SpreadAngle = Vector2.new(60, 60)
 	stars.EmissionDirection = Enum.NormalId.Top
 	stars.LightEmission = 1
 	stars.Parent = puff
 	dust:Emit(30)
 	stars:Emit(40)
+	task.delay(0.7 + 0.3, function()
+		stars:Emit(25) -- segundo destello al terminar
+	end)
 	task.delay(3, function()
 		puff:Destroy()
 	end)
+	if Animator.onBuild then
+		Animator.onBuild(center)
+	end
 end
 
 ------------------------------------------------------------------------------
--- "+$" flotantes sobre los negocios
+-- "+$" flotantes: saltan con trayectoria parabolica y se desvanecen
 ------------------------------------------------------------------------------
 
 local POPUP_INTERVAL = 3
+local GRAVITY = 22
 
 local function popup(model, amount)
 	local cf = model:GetPivot()
@@ -407,10 +378,11 @@ local function popup(model, amount)
 	anchor.CanTouch = false
 	anchor.Transparency = 1
 	anchor.Size = Vector3.new(0.2, 0.2, 0.2)
-	anchor.CFrame = CFrame.new(cf.Position + Vector3.new(math.random(-3, 3), size.Y + 1, math.random(-3, 3)))
+	local start = cf.Position + Vector3.new(math.random(-3, 3), size.Y * 0.8 + 1, math.random(-3, 3))
+	anchor.CFrame = CFrame.new(start)
 	anchor.Parent = workspace
 	local bb = Instance.new("BillboardGui")
-	bb.Size = UDim2.fromOffset(140, 44)
+	bb.Size = UDim2.fromOffset(40, 14)
 	bb.AlwaysOnTop = false
 	bb.MaxDistance = 140
 	bb.LightInfluence = 0
@@ -427,12 +399,38 @@ local function popup(model, amount)
 	stroke.Thickness = 2.5
 	stroke.Color = Color3.fromRGB(20, 70, 30)
 	stroke.Parent = label
-	TweenService:Create(anchor, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { CFrame = anchor.CFrame + Vector3.new(0, 6, 0) }):Play()
-	TweenService:Create(label, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { TextTransparency = 1 }):Play()
-	TweenService:Create(stroke, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In), { Transparency = 1 }):Play()
-	task.delay(1.7, function()
-		anchor:Destroy()
-	end)
+	-- Aparece con rebote (escala) y luego cae en parabola
+	TweenService:Create(bb, TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(140, 44) }):Play()
+	local a = math.random() * math.pi * 2
+	table.insert(popups, {
+		anchor = anchor,
+		label = label,
+		stroke = stroke,
+		pos = start,
+		vel = Vector3.new(math.cos(a) * 2.5, 13, math.sin(a) * 2.5),
+		age = 0,
+		life = 1.6,
+	})
+end
+
+local function stepPopups(dt)
+	for i = #popups, 1, -1 do
+		local p = popups[i]
+		p.age += dt
+		if p.age >= p.life or not p.anchor.Parent then
+			if p.anchor.Parent then
+				p.anchor:Destroy()
+			end
+			table.remove(popups, i)
+		else
+			p.vel += Vector3.new(0, -GRAVITY * dt, 0)
+			p.pos += p.vel * dt
+			p.anchor.CFrame = CFrame.new(p.pos)
+			local fade = math.clamp((p.age - p.life * 0.55) / (p.life * 0.45), 0, 1)
+			p.label.TextTransparency = fade
+			p.stroke.Transparency = fade
+		end
+	end
 end
 
 local function popupLoop(plotsFolder)
@@ -471,11 +469,8 @@ function Animator.start(map)
 		CollectionService:GetInstanceAddedSignal(tag):Connect(register)
 		CollectionService:GetInstanceRemovedSignal(tag):Connect(unregister)
 	end
-	for _, car in ipairs(CollectionService:GetTagged("TE_Car")) do
-		registerCar(car)
-	end
-	for _, w in ipairs(CollectionService:GetTagged("TE_Walker")) do
-		registerWalker(w)
+	for _, f in ipairs(CollectionService:GetTagged("TE_Flag")) do
+		registerFlag(f)
 	end
 	for _, tl in ipairs(CollectionService:GetTagged("TE_TrafficLight")) do
 		table.insert(trafficLights, { model = tl, phase = tl:GetAttribute("Phase") or 0, state = nil })
@@ -483,11 +478,20 @@ function Animator.start(map)
 	for _, c in ipairs(CollectionService:GetTagged("TE_Cloud")) do
 		table.insert(clouds, { model = c, base = c:GetPivot(), speed = c:GetAttribute("Speed") or 3 })
 	end
+	Traffic.start()
+	Pedestrians.start()
 
-	-- Construccion animada de edificios nuevos (en cualquier parcela)
 	local plotsFolder = map:WaitForChild("Plots")
 	local function watchPlot(plot)
 		local buildings = plot:WaitForChild("Buildings", 10)
+		local padFolder = plot:WaitForChild("Pads", 10)
+		if padFolder then
+			for _, d in ipairs(padFolder:GetDescendants()) do
+				if d.Name == "Button" and d:IsA("BasePart") then
+					registerPad(d)
+				end
+			end
+		end
 		if not buildings then
 			return
 		end
@@ -512,16 +516,22 @@ function Animator.start(map)
 		local camPos = cam and cam.CFrame.Position or Vector3.zero
 		if acc > 0.5 then
 			acc = 0
-			updateActive()
-			updateWalkersActive(camPos)
-			stepTrafficLights(t)
+			updateActive(camPos)
 		end
-		step(t)
-		stepCars(t)
-		stepWalkers(t, camPos)
+		step(t, dt)
+		stepFlags(t, camPos)
 		stepClouds(t)
+		stepTrafficLights(t)
+		stepPads(t, camPos)
+		stepPopups(dt)
+		Traffic.step(dt, t, camPos)
+		Pedestrians.step(dt, t, camPos)
 	end)
 	task.spawn(popupLoop, plotsFolder)
 end
+
+Animator._entries = entries
+Animator._flags = flags
+Animator._popups = popups
 
 return Animator

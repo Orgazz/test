@@ -292,6 +292,12 @@ function Kit.tree(parent, cf, style, color)
 			d.CanCollide = d.Name == "Trunk"
 		end
 	end
+	-- Balanceo suave con el viento (lo anima el cliente desde la base del tronco)
+	m.WorldPivot = cf
+	m:AddTag("TE_Sway")
+	m:SetAttribute("SwayMode", "tilt")
+	m:SetAttribute("SwayAngle", style == "palm" and 3.5 or 2)
+	m:SetAttribute("SwaySpeed", 0.25 + (math.abs(cf.Position.X * 7 + cf.Position.Z * 13) % 10) / 60)
 	return m
 end
 

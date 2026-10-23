@@ -199,12 +199,14 @@ function Actions.buyBusiness(state, id)
 	state.data.businesses[id] = 1
 	state.data.stats.builds += 1
 	ChallengeService.progress(state, "builds", 1)
+	local where = nil
 	if state.plot then
-		PlotService.buildBusiness(state.plot, state, id, true)
+		local model = PlotService.buildBusiness(state.plot, state, id, true)
+		where = model and model:GetPivot().Position
 		DayNightService.applyTo(state.plot.model.Buildings)
 	end
 	notify(state.player, b.icon .. " ¡Has abierto " .. b.name .. "!", COLORS.good, "build")
-	effect(state.player, { kind = "build", id = id })
+	effect(state.player, { kind = "build", id = id, position = where })
 	refreshVisuals(state)
 	checkTutorial(state)
 	markDirty(state)
@@ -233,12 +235,14 @@ function Actions.upgradeBusiness(state, id)
 	state.data.stats.builds += 1
 	ChallengeService.progress(state, "levelUps", 1)
 	ChallengeService.progress(state, "builds", 1)
+	local where = nil
 	if state.plot then
-		PlotService.buildBusiness(state.plot, state, id, true)
+		local model = PlotService.buildBusiness(state.plot, state, id, true)
+		where = model and model:GetPivot().Position
 		DayNightService.applyTo(state.plot.model.Buildings)
 	end
 	notify(state.player, "⬆️ " .. b.name .. " sube a nivel " .. (level + 1) .. "!", COLORS.good, "levelup")
-	effect(state.player, { kind = "levelup", id = id, level = level + 1 })
+	effect(state.player, { kind = "levelup", id = id, level = level + 1, position = where })
 	refreshVisuals(state)
 	checkTutorial(state)
 	markDirty(state)
@@ -532,10 +536,12 @@ local function onPlayerAdded(player)
 	end
 	notify(player, "👋 ¡Bienvenido a Tiny Empire Tycoon, " .. player.DisplayName .. "!", COLORS.gold, "success")
 
-	player.CharacterAdded:Connect(function()
+	player.CharacterAdded:Connect(function(character)
+		GameService.setCollisionGroup(character)
 		task.defer(placeCharacter, state)
 	end)
 	if player.Character then
+		GameService.setCollisionGroup(player.Character)
 		task.defer(placeCharacter, state)
 	end
 end
@@ -606,6 +612,29 @@ end
 ------------------------------------------------------------------------------
 -- API publica para otros servicios
 ------------------------------------------------------------------------------
+
+-- Personajes en su propio grupo de colision: los efectos fisicos (monedas,
+-- escombros) rebotan en el suelo pero atraviesan a los jugadores.
+function GameService.setCollisionGroup(character)
+	local function apply(d)
+		if d:IsA("BasePart") then
+			d.CollisionGroup = "TE_Players"
+		end
+	end
+	for _, d in ipairs(character:GetDescendants()) do
+		apply(d)
+	end
+	character.DescendantAdded:Connect(apply)
+end
+
+function GameService.announceRain()
+	for player, state in pairs(states) do
+		if state.ready then
+			notify(player, "🌧️💼 ¡Lluvia de maletines en la plaza central! ¡Corre!", COLORS.gold, "success")
+			effect(player, { kind = "rain" })
+		end
+	end
+end
 
 function GameService.getState(player)
 	return states[player]
