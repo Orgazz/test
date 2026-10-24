@@ -109,9 +109,17 @@ function H.advance(seconds, dt)
 		for _, sig in ipairs(frameSignals) do
 			sig:Fire(dt)
 		end
+		for _, hook in ipairs(H.frameHooks) do
+			hook(dt)
+		end
 	end
 	Sched.runUntil(target)
 end
+
+-- Ganchos opcionales (los usa tools/sim.luau para el video)
+H.frameHooks = {}
+H.tweenOverride = nil -- function(inst, info, goals) -> tween
+H.onCreate = nil -- function(proxy, className)
 
 ------------------------------------------------------------------------------
 -- Senales
@@ -201,6 +209,8 @@ local PROP_DEFAULTS = {
 	Thickness = 1,
 	Active = false,
 	AutoButtonColor = true,
+	AssemblyLinearVelocity = roblox.Vector3.zero,
+	AssemblyAngularVelocity = roblox.Vector3.zero,
 }
 
 local wrap, unwrap
@@ -788,6 +798,9 @@ function H.setup(opts)
 
 	local tweenService = newService("TweenService", {
 		Create = function(_, inst, _info, goals)
+			if H.tweenOverride then
+				return H.tweenOverride(inst, _info, goals)
+			end
 			local tween = { Completed = Signal.new("Completed") }
 			function tween:Play()
 				for k, v in pairs(goals) do
@@ -918,6 +931,9 @@ local InstanceMock = {
 		local p = wrap(roblox.Instance.new(className))
 		if parent then
 			p.Parent = parent
+		end
+		if H.onCreate then
+			H.onCreate(p, className)
 		end
 		return p
 	end,

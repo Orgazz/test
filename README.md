@@ -20,6 +20,8 @@ Juego tycoon completo para Roblox: cada jugador recibe una parcela en una ciudad
 
 [`assets/video_presentacion.mp4`](assets/video_presentacion.mp4) (43 s, 1280×720): construcción de una parcela en cámara rápida con el HUD, máquinas animadas, plaza con peatones, tráfico con semáforos y ciclo de noche. Está renderizado fuera de Roblox con `tools/make_video.py` a partir de los datos reales que generan los scripts (`tools/export_video.luau`); en Roblox la iluminación y las sombras son las del motor.
 
+[`assets/video_fisicas.mp4`](assets/video_fisicas.mp4) (66 s): físicas y animaciones (semáforos y colas, frenado ante jugadores, peatones, lluvia de maletines, trampolín y obras). Aquí cada fotograma sale de ejecutar el **código real del cliente y del servidor** en el arnés (`tools/export_physics_video.luau`); la caída y los rebotes de piezas sueltas usan una física aproximada (`tools/sim.luau`), en Roblox los resuelve el motor.
+
 ## 🎨 Imágenes incluidas (generadas para el juego)
 
 Todas están en [`assets/`](assets) y se regeneran con `python3 tools/make_images.py build assets`. Están dibujadas por código (sin recursos de terceros) en 512×512 o 1920×1080, listas para subir.

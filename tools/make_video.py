@@ -104,7 +104,8 @@ class Batch:
         cf, size, color, shape, mat, transp, flags = rec[0], rec[1], rec[2], rec[3], rec[4], rec[5], rec[6]
         if R is None:
             R, pos = cf_matrix(cf)
-        flat = shape == 0 and ((size[1] <= 1.3 and size[0] * size[2] > 30) or size[0] * size[2] > 5000)
+        flat = (shape == 0 and ((size[1] <= 1.3 and size[0] * size[2] > 30) or size[0] * size[2] > 5000)) or (
+            shape == 1 and size[0] <= 1.3 and size[1] >= 8 and abs(R[1][0]) > 0.9)
         for f in local_faces(shape, size):
             self.verts.append(f @ R.T + pos)
             self.color.append(color)
@@ -156,7 +157,22 @@ class Camera:
         x = rel @ self.right
         y = rel @ self.up
         zc = np.maximum(z, 0.05)
+        self.last_xyz = np.stack([x, y, z], axis=1)
         return np.stack([W / 2 + self.f * x / zc, H / 2 - self.f * y / zc], axis=1), z
+
+    def clip_project(self, xyz, near=0.5):
+        """Recorta un poligono (coords de camara) contra el plano cercano y lo proyecta."""
+        out = []
+        n = len(xyz)
+        for i in range(n):
+            a, b = xyz[i], xyz[(i + 1) % n]
+            ina, inb = a[2] >= near, b[2] >= near
+            if ina:
+                out.append(a)
+            if ina != inb:
+                t = (near - a[2]) / (b[2] - a[2])
+                out.append(a + (b - a) * t)
+        return [(W / 2 + self.f * p[0] / p[2], H / 2 - self.f * p[1] / p[2]) for p in out]
 
 
 def sky_image(night):
@@ -196,10 +212,15 @@ def draw_frame(batch, cam, night=0.0, glows=(), fog_color=None):
     nn = np.linalg.norm(n, axis=1); nn[nn == 0] = 1
     n = n / nn[:, None]
     to_cam = cam.pos - centers
-    visible = (np.einsum("ij,ij->i", n, to_cam) > 0) & (zmin > 0.3) & (batch.alpha < 0.95)
+    zmax = np.maximum.reduceat(Z, starts)
+    visible = (np.einsum("ij,ij->i", n, to_cam) > 0) & (zmax > 0.5) & (batch.alpha < 0.95)
+    needs_clip = zmin < 0.5
+    XYZ = cam.last_xyz
     sx = np.add.reduceat(V2[:, 0], starts) / counts
     sy = np.add.reduceat(V2[:, 1], starts) / counts
-    visible &= (sx > -W) & (sx < 2 * W) & (sy > -H) & (sy < 2 * H)
+    xmin = np.minimum.reduceat(V2[:, 0], starts); xmax = np.maximum.reduceat(V2[:, 0], starts)
+    ymin = np.minimum.reduceat(V2[:, 1], starts); ymax2 = np.maximum.reduceat(V2[:, 1], starts)
+    visible &= needs_clip | ((xmax > 0) & (xmin < W) & (ymax2 > 0) & (ymin < H))
     dist = np.linalg.norm(to_cam, axis=1)
     # color
     shade = 0.55 + 0.45 * np.clip(n @ LIGHT, 0, None)
@@ -228,7 +249,12 @@ def draw_frame(batch, cam, night=0.0, glows=(), fog_color=None):
     d = ImageDraw.Draw(img, "RGBA")
     for idx in list(order_flat) + list(order_rest):
         s = starts[idx]
-        pts = V2[s:s + counts[idx]]
+        if needs_clip[idx]:
+            pts = cam.clip_project(XYZ[s:s + counts[idx]])
+            if len(pts) < 3:
+                continue
+        else:
+            pts = V2[s:s + counts[idx]]
         a = batch.alpha[idx]
         c = tuple(col[idx])
         if a > 0.02:

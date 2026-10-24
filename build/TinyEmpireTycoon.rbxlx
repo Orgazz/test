@@ -5983,6 +5983,9 @@ local POPUP_INTERVAL = 3
 local GRAVITY = 22
 
 local function popup(model, amount)
+	if not model.Parent then
+		return -- el edificio se reconstruyo mientras esperaba
+	end
 	local cf = model:GetPivot()
 	local size = model:GetExtentsSize()
 	local anchor = Instance.new("Part")
